@@ -27,3 +27,9 @@
 *.exe
 *.out
 *.app
+
+# Project files
+x64\*
+*.VC.db
+*.VC.opendb
+.vs\*
