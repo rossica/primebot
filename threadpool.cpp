@@ -2,28 +2,22 @@
 
 #include <chrono>
 
-Threadpool::Threadpool(std::function<void(std::unique_ptr<void*>)>& ProcessWorkitemFunc, std::function<void(std::unique_ptr<void*>)>& ProcessResultFunc)
+Threadpool::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool&, std::unique_ptr<void*>)> ProcessWorkitemFunc, std::function<void(Threadpool&, std::unique_ptr<void*>)> ProcessResultFunc)
 {
 	ProcessWorkItem = ProcessWorkitemFunc;
 	ProcessResult = ProcessResultFunc;
+	this->ThreadCount = ThreadCount;
 
 	Initialize();
 }
 
 Threadpool::~Threadpool()
 {
-	Shutdown = true;
-
-	for (int i = 0; i < Threads.size(); i++)
-	{
-		Threads[i].join();
-	}
+	Stop();
 }
 
 void Threadpool::Initialize()
 {
-	int ThreadCount = std::thread::hardware_concurrency();
-
 	if (ThreadCount == 0)
 	{
 		ThreadCount = 1;
@@ -36,9 +30,28 @@ void Threadpool::Initialize()
 	Threads.shrink_to_fit(); // don't waste memory
 }
 
+void Threadpool::Stop()
+{
+	{
+		std::unique_lock<std::recursive_mutex> lock(WaitLock);
+		Shutdown = true;
+		WaitVariable.notify_all();
+	}
+
+	for (int i = 0; i < Threads.size(); i++)
+	{
+		if (Threads[i].joinable())
+		{
+			Threads[i].join();
+		}
+	}
+}
+
 std::unique_ptr<void*> Threadpool::GetResultThread()
 {
-	if (!ResultsLock.try_lock())
+	std::lock_guard<std::mutex> lock(ResultsLock);
+
+	if (Results.size() == 0)
 	{
 		return nullptr;
 	}
@@ -46,13 +59,14 @@ std::unique_ptr<void*> Threadpool::GetResultThread()
 	std::unique_ptr<void*> Value = std::move(Results.front());
 	Results.pop_front();
 
-	ResultsLock.unlock();
 	return Value;
 }
 
 std::unique_ptr<void*> Threadpool::GetWorkItemThread()
 {
-	if (!WorkItemsLock.try_lock())
+	std::lock_guard<std::mutex> lock(WorkItemsLock);
+
+	if (WorkItems.size() == 0)
 	{
 		return nullptr;
 	}
@@ -60,41 +74,50 @@ std::unique_ptr<void*> Threadpool::GetWorkItemThread()
 	std::unique_ptr<void*> Value = std::move(WorkItems.front());
 	WorkItems.pop_front();
 
-	WorkItemsLock.unlock();
 	return Value;
 }
 
 void Threadpool::ThreadFunc()
 {
+	std::unique_lock<std::recursive_mutex> lock(WaitLock);
 	while (!Shutdown)
 	{
+		// Wait for work to do
+		WaitVariable.wait(lock);
+
 		// check Results, and process a result
 		std::unique_ptr<void*> Result = GetResultThread();
 		if (Result != nullptr)
 		{
-			ProcessResult(std::move(Result));
+			ProcessResult(*this, std::move(Result));
 		}
 
 		// check WorkItems, and process a workitem
 		std::unique_ptr<void*> WorkItem = GetWorkItemThread();
 		if (WorkItem != nullptr)
 		{
-			ProcessWorkItem(std::move(WorkItem));
+			ProcessWorkItem(*this, std::move(WorkItem));
 		}
-
-		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 }
 
 
 void Threadpool::EnqueueWorkItem(std::unique_ptr<void*> WorkItem)
 {
-	std::lock_guard<std::mutex> lock(WorkItemsLock);
-	WorkItems.push_back(std::move(WorkItem));
+	{
+		std::lock_guard<std::mutex> lock(WorkItemsLock);
+		WorkItems.push_back(std::move(WorkItem));
+	}
+	std::unique_lock<std::recursive_mutex> lock(WaitLock);
+	WaitVariable.notify_one();
 }
 
 void Threadpool::EnqueueResult(std::unique_ptr<void*> Result)
 {
-	std::lock_guard<std::mutex> lock(ResultsLock);
-	Results.push_back(std::move(Result));
+	{
+		std::lock_guard<std::mutex> lock(ResultsLock);
+		Results.push_back(std::move(Result));
+	}
+	std::unique_lock<std::recursive_mutex> lock(WaitLock);
+	WaitVariable.notify_one();
 }
