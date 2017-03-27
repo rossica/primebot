@@ -49,11 +49,11 @@ bool MillerRabin(int power) {
 	for (; i != -1; i--) {
 		if (binary[i] == true) {
 			temp = modTimes( modTimes(x, temp, power), temp, power);
-			if (i == r && (temp == 1 || temp == -1) ) return true;
+			if (i == r && (temp == 1 || temp == mod(-1, power) ) ) return true;
 		}
 		else {
 			temp = modTimes(temp, temp, power);
-			if (r > i && (temp == -1)) return true;
+			if (r > i && temp == mod(-1, power) ) return true;
 		}
 	}
 	return false;
@@ -90,7 +90,6 @@ Threadpool<int> tp(std::thread::hardware_concurrency(), ProcessPrime, ProcessRes
 
 int main(char* argv, int argc)
 {
-	
 	for (int i = 0, j=101; i < tp.GetThreadCount(); i++, j+=2)
 	{
 		int t = j;
