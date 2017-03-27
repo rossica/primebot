@@ -1,36 +1,40 @@
 #include <iostream>
-#include "threadpool.h"
+//#include "threadpool.h"
+#include "locklessthreadpool.h"
 
+void ProcessPrime(ThreadContext<std::unique_ptr<int>, decltype(ProcessPrime), decltype(ProcessResult)>* thread, std::unique_ptr<int> workitem);
+void ProcessResult(ThreadContext<std::unique_ptr<int>, decltype(ProcessPrime), decltype(ProcessResult)>* thread, std::unique_ptr<int> result);
 
-void ProcessPrime(Threadpool& pool, std::unique_ptr<void*> workitem)
+LocklessThreadpool<std::unique_ptr<int>, decltype(ProcessPrime), decltype(ProcessResult)> tp(std::thread::hardware_concurrency());
+
+void ProcessPrime(ThreadContext<std::unique_ptr<int>, decltype(ProcessPrime), decltype(ProcessResult)>* thread, std::unique_ptr<int> workitem)
 {
-	if (*((int*)*workitem) < 200)
+	if (*workitem < 300)
 	{
-		int* t = new int;
-		*t = *((int*)*workitem) + (2 * pool.GetThreadCount());
-		pool.EnqueueWorkItem(std::move(std::make_unique<void*>(t)));
-		pool.EnqueueResult(std::move(workitem));
+		thread->EnqueueWork(std::make_unique<int>(*workitem + (2 * tp.GetThreadCount())));
+		for (int i = 0; i < 1000000; i++)
+		{
+			i += *workitem;
+			i -= *workitem;
+		}
+		thread->EnqueueResult(std::move(workitem));
 	}
 }
 
-void ProcessResult(Threadpool& pool, std::unique_ptr<void*> result)
+void ProcessResult(ThreadContext<std::unique_ptr<int>, decltype(ProcessPrime), decltype(ProcessResult)>* thread, std::unique_ptr<int> result)
 {
-	std::cout << *(int*)*result << std::endl;
+	std::cout << *result << std::endl;
 }
-
-Threadpool tp(std::thread::hardware_concurrency(), ProcessPrime, ProcessResult);
 
 
 int main(char* argv, int argc)
 {
 	for (int i = 0, j=1; i < tp.GetThreadCount(); i++, j+=2)
 	{
-		int* t = new int;
-		*t = j;
-		tp.EnqueueWorkItem(std::move(std::make_unique<void*>(t)));
+		tp.EnqueueWorkItem(std::make_unique<int>(j));
 	}
 
-	std::this_thread::sleep_for(std::chrono::seconds(10));
+	std::this_thread::sleep_for(std::chrono::seconds(20));
 	tp.Stop();
 	std::this_thread::sleep_for(std::chrono::seconds(60));
 
