@@ -1,8 +1,7 @@
-#include "threadpool.h"
-
 #include <chrono>
 
-Threadpool::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool&, std::unique_ptr<void*>)> ProcessWorkitemFunc, std::function<void(Threadpool&, std::unique_ptr<void*>)> ProcessResultFunc)
+template<typename Number>
+Threadpool<Number>::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool<Number>&, Number)> ProcessWorkitemFunc, std::function<void(Threadpool<Number>&, Number)> ProcessResultFunc)
 {
 	ProcessWorkItem = ProcessWorkitemFunc;
 	ProcessResult = ProcessResultFunc;
@@ -11,12 +10,14 @@ Threadpool::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool&,
 	Initialize();
 }
 
-Threadpool::~Threadpool()
+template<typename Number>
+Threadpool<Number>::~Threadpool()
 {
 	Stop();
 }
 
-void Threadpool::Initialize()
+template<typename Number>
+void Threadpool<Number>::Initialize()
 {
 	if (ThreadCount == 0)
 	{
@@ -25,12 +26,13 @@ void Threadpool::Initialize()
 
 	for (int i = 0; i < ThreadCount; i++)
 	{
-		Threads.push_back(std::thread(std::bind(&Threadpool::ThreadFunc, this)));
+		Threads.push_back(std::thread(std::bind(&Threadpool<Number>::ThreadFunc, this)));
 	}
 	Threads.shrink_to_fit(); // don't waste memory
 }
 
-void Threadpool::Stop()
+template<typename Number>
+void Threadpool<Number>::Stop()
 {
 	{
 		std::unique_lock<std::recursive_mutex> lock(WaitLock);
@@ -47,7 +49,8 @@ void Threadpool::Stop()
 	}
 }
 
-std::unique_ptr<void*> Threadpool::GetResultThread()
+template<typename Number>
+std::unique_ptr<Number> Threadpool<Number>::GetResultThread()
 {
 	std::lock_guard<std::mutex> lock(ResultsLock);
 
@@ -56,13 +59,14 @@ std::unique_ptr<void*> Threadpool::GetResultThread()
 		return nullptr;
 	}
 
-	std::unique_ptr<void*> Value = std::move(Results.front());
+	std::unique_ptr<Number> Value = std::make_unique<Number>(std::move(Results.front()));
 	Results.pop_front();
 
 	return Value;
 }
 
-std::unique_ptr<void*> Threadpool::GetWorkItemThread()
+template<typename Number>
+std::unique_ptr<Number> Threadpool<Number>::GetWorkItemThread()
 {
 	std::lock_guard<std::mutex> lock(WorkItemsLock);
 
@@ -71,13 +75,14 @@ std::unique_ptr<void*> Threadpool::GetWorkItemThread()
 		return nullptr;
 	}
 
-	std::unique_ptr<void*> Value = std::move(WorkItems.front());
+	std::unique_ptr<Number> Value = std::make_unique<Number>(std::move(WorkItems.front()));
 	WorkItems.pop_front();
 
 	return Value;
 }
 
-void Threadpool::ThreadFunc()
+template<typename Number>
+void Threadpool<Number>::ThreadFunc()
 {
 	std::unique_lock<std::recursive_mutex> lock(WaitLock);
 	while (!Shutdown)
@@ -86,23 +91,22 @@ void Threadpool::ThreadFunc()
 		WaitVariable.wait(lock);
 
 		// check Results, and process a result
-		std::unique_ptr<void*> Result = GetResultThread();
-		if (Result != nullptr)
-		{
-			ProcessResult(*this, std::move(Result));
+		std::unique_ptr<Number> Result = GetResultThread();
+		if (Result != nullptr) {
+			ProcessResult(*this, std::move(*Result));
 		}
 
-		// check WorkItems, and process a workitem
-		std::unique_ptr<void*> WorkItem = GetWorkItemThread();
-		if (WorkItem != nullptr)
-		{
-			ProcessWorkItem(*this, std::move(WorkItem));
+
+		// check WorkItems, and process a workitem 
+		std::unique_ptr<Number> WorkItem = GetWorkItemThread();
+		if (WorkItem != nullptr) {
+			ProcessWorkItem(*this, std::move(*WorkItem));
 		}
 	}
 }
 
-
-void Threadpool::EnqueueWorkItem(std::unique_ptr<void*> WorkItem)
+template<typename Number>
+void Threadpool<Number>::EnqueueWorkItem(Number WorkItem)
 {
 	{
 		std::lock_guard<std::mutex> lock(WorkItemsLock);
@@ -112,7 +116,8 @@ void Threadpool::EnqueueWorkItem(std::unique_ptr<void*> WorkItem)
 	WaitVariable.notify_one();
 }
 
-void Threadpool::EnqueueResult(std::unique_ptr<void*> Result)
+template<typename Number>
+void Threadpool<Number>::EnqueueResult(Number Result)
 {
 	{
 		std::lock_guard<std::mutex> lock(ResultsLock);
