@@ -18,7 +18,7 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="threadpool.cpp">
+    <ClCompile Include="prime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -27,6 +27,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="threadpool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="prime.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="onelockthreadpool.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

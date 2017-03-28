@@ -88,6 +88,9 @@ void Threadpool<T>::Stop()
 			Threads[i].join();
 		}
 	}
+
+	WorkItems.clear();
+	Results.clear();
 }
 
 template<class T>
