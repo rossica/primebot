@@ -27,6 +27,7 @@ public:
     ThreadContext() = delete;
     ThreadContext(OneLockThreadpool<Work_T>& Parent, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult);
     ThreadContext(ThreadContext<Work_T>&);
+    ThreadContext(ThreadContext<Work_T>&&);
     ~ThreadContext();
 };
 
@@ -114,10 +115,10 @@ inline void ThreadContext<Work_T>::ThreadFunc()
 
 template<class Work_T>
 inline ThreadContext<Work_T>::ThreadContext(OneLockThreadpool<Work_T>& Parent, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult) :
-    Pool(Parent),
+    Shutdown(false),
     ProcessWorkitem(ProcessWorkitem),
     ProcessResult(ProcessResult),
-    Shutdown(false)
+    Pool(Parent)
 {
     // This must be initialized after Shutdown has been initialized
     Thread = std::thread(std::bind(&ThreadContext::ThreadFunc, this));
@@ -144,6 +145,12 @@ inline ThreadContext<Work_T>::ThreadContext(ThreadContext<Work_T>& Other) :
     Other.Shutdown = true;
     Other.Sync.unlock();
     Sync.unlock();
+}
+
+template<class Work_T>
+inline ThreadContext<Work_T>::ThreadContext(ThreadContext<Work_T>&& Other) :
+    ThreadContext<Work_T>(Other)
+{
 }
 
 template<class Work_T>

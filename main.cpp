@@ -25,7 +25,7 @@ void ProcessResult(ThreadContext<std::unique_ptr<int>>& thread, std::unique_ptr<
 OneLockThreadpool<std::unique_ptr<int>> tp(std::thread::hardware_concurrency(), ProcessPrime, ProcessResult);
 
 
-int main(char* argv, int argc)
+int main(int argc, char** argv)
 {
 	//for (unsigned int i = 1; i <= tp.GetThreadCount(); i++)
 	//{
