@@ -35,5 +35,11 @@
     <ClInclude Include="onelockthreadpool.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\gmp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\gmpxx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
