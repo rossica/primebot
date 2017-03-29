@@ -1,6 +1,5 @@
 #include <iostream>
-//#include "onelockthreadpool.h"
-//#include "prime.h"
+#include "prime.h"
 
 #include "asyncPrimeSearching.h"
 
@@ -50,6 +49,7 @@ int main(int argc, char** argv)
 	auto primes = findPrimes(3, 5000);
 	for (auto v : primes)
 		std::cout << v << std::endl;
+
 	int dummy = 0;
 	std::cin >> dummy;
 	return 0;
