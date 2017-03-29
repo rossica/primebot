@@ -1,8 +1,11 @@
 #include <iostream>
-#include "onelockthreadpool.h"
-#include "prime.h"
+//#include "onelockthreadpool.h"
+//#include "prime.h"
+
+#include "asyncPrimeSearching.h"
 
 // test code
+/*
 void ProcessPrime(ThreadContext<std::unique_ptr<int>>& thread, std::unique_ptr<int> workitem)
 {
 	if (*workitem < 300)
@@ -23,7 +26,7 @@ void ProcessResult(ThreadContext<std::unique_ptr<int>>& thread, std::unique_ptr<
 }
 
 OneLockThreadpool<std::unique_ptr<int>> tp(std::thread::hardware_concurrency(), ProcessPrime, ProcessResult);
-
+*/
 
 int main(int argc, char** argv)
 {
@@ -36,11 +39,18 @@ int main(int argc, char** argv)
 	//tp.Stop();
 	//std::this_thread::sleep_for(std::chrono::seconds(60));
 
+	/*
 	Primebot pb(std::thread::hardware_concurrency(), nullptr);
 
 	pb.Start();
 
 	std::this_thread::sleep_for(std::chrono::seconds(60));
+	*/
 
+	auto primes = findPrimes(3, 5000);
+	for (auto v : primes)
+		std::cout << v << std::endl;
+	int dummy = 0;
+	std::cin >> dummy;
 	return 0;
 }

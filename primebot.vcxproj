@@ -114,15 +114,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="asyncPrimeSearching.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="prime.cpp" />
+    <ClCompile Include="PrimeTest.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="asyncPrimeSearching.h" />
     <ClInclude Include="include\gmp.h" />
     <ClInclude Include="include\gmpxx.h" />
     <ClInclude Include="onelockthreadpool.h" />
     <ClInclude Include="pal.h" />
     <ClInclude Include="prime.h" />
+    <ClInclude Include="PrimeTest.h" />
     <ClInclude Include="threadpool.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

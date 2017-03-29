@@ -21,6 +21,12 @@
     <ClCompile Include="prime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="asyncPrimeSearching.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PrimeTest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pal.h">
@@ -39,6 +45,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\gmpxx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PrimeTest.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="asyncPrimeSearching.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
