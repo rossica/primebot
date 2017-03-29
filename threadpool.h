@@ -27,15 +27,15 @@ private:
 
 	void Initialize();
 
-	T GetResultThread();
-	T GetWorkItemThread();
+	bool GetResultThread(T& Result);
+	bool GetWorkItemThread(T& WorkItem);
 
 	std::function<void(Threadpool<T>&, T)> ProcessWorkItem;
 	std::function<void(Threadpool<T>&, T)> ProcessResult;
 public:
 	Threadpool() = delete;
 	Threadpool(const Threadpool&) = delete;
-	Threadpool(unsigned int ThreadCount, std::function<void(Threadpool<T>&, T)> ProcessWorkitem, std::function<void(Threadpool<T>&, T)> ProcessResult);
+	Threadpool(unsigned int ThreadCount, std::function<void(Threadpool<T>&, T)>&& ProcessWorkitem, std::function<void(Threadpool<T>&, T)>&& ProcessResult);
 	~Threadpool();
 
 	void EnqueueWorkItem(T WorkItem);
@@ -47,12 +47,11 @@ public:
 };
 
 template<class T>
-Threadpool<T>::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool<T>&, T)> ProcessWorkitemFunc, std::function<void(Threadpool<T>&, T)> ProcessResultFunc)
+Threadpool<T>::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool<T>&, T)>&& ProcessWorkitemFunc, std::function<void(Threadpool<T>&, T)>&& ProcessResultFunc) :
+    ProcessWorkItem(std::move(ProcessWorkitemFunc)),
+    ProcessResult(std::move(ProcessResultFunc)),
+    ThreadCount(ThreadCount)
 {
-	ProcessWorkItem = ProcessWorkitemFunc;
-	ProcessResult = ProcessResultFunc;
-	this->ThreadCount = ThreadCount;
-
 	Initialize();
 }
 
@@ -94,35 +93,35 @@ void Threadpool<T>::Stop()
 }
 
 template<class T>
-T Threadpool<T>::GetResultThread()
+bool Threadpool<T>::GetResultThread(T& Result)
 {
 	std::lock_guard<std::mutex> lock(ResultsLock);
 
 	if (Results.size() == 0)
 	{
-		return nullptr;
+		return false;
 	}
 
-	T Value = std::move(Results.front());
+	Result = std::move(Results.front());
 	Results.pop_front();
 
-	return Value;
+	return true;
 }
 
 template<class T>
-T Threadpool<T>::GetWorkItemThread()
+bool Threadpool<T>::GetWorkItemThread(T& WorkItem)
 {
 	std::lock_guard<std::mutex> lock(WorkItemsLock);
 
 	if (WorkItems.size() == 0)
 	{
-		return nullptr;
+		return false;
 	}
 
-	T Value = std::move(WorkItems.front());
+	WorkItem = std::move(WorkItems.front());
 	WorkItems.pop_front();
 
-	return Value;
+	return true;
 }
 
 template<class T>
@@ -141,15 +140,15 @@ void Threadpool<T>::ThreadFunc()
 		}
 
 		// check Results, and process a result
-		T Result = GetResultThread();
-		if (Result != nullptr)
+		T Result;
+		if (GetResultThread(Result))
 		{
 			ProcessResult(*this, std::move(Result));
 		}
 
 		// check WorkItems, and process a workitem
-		T WorkItem = GetWorkItemThread();
-		if (WorkItem != nullptr)
+		T WorkItem;
+		if (GetWorkItemThread(WorkItem))
 		{
 			ProcessWorkItem(*this, std::move(WorkItem));
 		}

@@ -1,6 +1,6 @@
 #pragma once
-#include<climits>
-#include<bitset>
+#include <climits>
+#include <bitset>
 
 #pragma warning( push )
 #pragma warning( disable: 4146 )

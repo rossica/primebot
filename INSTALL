@@ -6,10 +6,18 @@ Windows 64-bit:
     Then, follow the instructions here for MS Windows DLLs:
     https://gmplib.org/manual/Notes-for-Particular-Systems.html#Notes-for-Particular-Systems
 
-    The .configure command I used:
+    Summarized:
+    Open MSYS console, navigate to where you have GMP source extracted (e.g. /c/gmp/)
+
+    Run:
     ./configure --prefix=/c/primebot --host=x86_64-w64-mingw32 --disable-static --enable-shared
 
-    The lib command I used (run from Visual Studio developer command prompt):
+    Now run:
+    make -j8
+    make check -j8
+    make install
+
+    From Visual Studio developer command prompt, run the following:
     lib /def:c:\gmp\.libs\libgmp-3.dll.def /machine:x64 /out:c:\primebot\lib\libgmp-3.lib
 
     Next, copy the libgmp-10.dll from the bin directory and put it in the same

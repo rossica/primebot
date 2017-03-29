@@ -24,6 +24,9 @@
     <ClCompile Include="PrimeTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="networkcontroller.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pal.h">
@@ -42,6 +45,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="asyncPrimeSearching.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="networkcontroller.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

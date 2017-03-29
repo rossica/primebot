@@ -3,8 +3,10 @@
 #include <memory>
 
 #include "prime.h"
-
-#include "asyncPrimeSearching.h"
+//#include "onelockthreadpool.h"
+//#include "asyncPrimeSearching.h"
+#include "networkcontroller.h"
+#include <string.h>
 
 // test code
 /*
@@ -49,6 +51,7 @@ int main(int argc, char** argv)
 	std::this_thread::sleep_for(std::chrono::seconds(60));
 	*/
 
+        /*
 	mpz_class a = 3;
 	mpz_class b = 5000;
 	auto primes = findPrimes(a, b);
@@ -58,4 +61,42 @@ int main(int argc, char** argv)
 	int dummy = 0;
 	std::cin >> dummy;
 	return 0;
+        */
+
+
+    if (argc > 1 && strcmp(argv[1], "-c") == 0)
+    {
+        // client code
+        NetworkControllerSettings NetSettings = { 0 };
+        NetSettings.IPv4.sin_family = AF_INET;
+        NetSettings.IPv4.sin_addr = in4addr_loopback;
+        NetSettings.IPv4.sin_port = htons(60000);
+        NetSettings.Server = false;
+
+        NetworkController netcon(NetSettings);
+
+        Primebot pb(std::thread::hardware_concurrency(), &netcon);
+        netcon.SetPrimebot(&pb);
+
+        pb.Start();
+
+        int dummy = 0;
+        std::cout << "Type anything and press enter to exit.";
+        std::cin >> dummy;
+
+        pb.Stop();
+    }
+    else if (argc > 1 && strcmp(argv[1], "-s") == 0)
+    {
+        // server
+        NetworkControllerSettings NetSettings = { 0 };
+        NetSettings.IPv4.sin_family = AF_INET;
+        NetSettings.IPv4.sin_addr = in4addr_loopback;
+        NetSettings.Server = true;
+
+        NetworkController netsrv(NetSettings);
+        netsrv.Start();
+    }
+
+    return 0;
 }

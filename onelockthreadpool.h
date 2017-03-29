@@ -26,7 +26,7 @@ public:
     void Stop();
     ThreadContext() = delete;
     ThreadContext(OneLockThreadpool<Work_T>& Parent, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult);
-    ThreadContext(ThreadContext<Work_T>&);
+    ThreadContext(ThreadContext<Work_T>&) = delete;
     ThreadContext(ThreadContext<Work_T>&&);
     ~ThreadContext();
 };
@@ -108,7 +108,7 @@ inline void ThreadContext<Work_T>::ThreadFunc()
 
         if (!WasWorkPerformed)
         {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
         }
     }
 }
@@ -126,7 +126,7 @@ inline ThreadContext<Work_T>::ThreadContext(OneLockThreadpool<Work_T>& Parent, s
 
 // I don't trust myself to have written this correctly
 template<class Work_T>
-inline ThreadContext<Work_T>::ThreadContext(ThreadContext<Work_T>& Other) :
+inline ThreadContext<Work_T>::ThreadContext(ThreadContext<Work_T>&& Other) :
     Pool(Other.Pool)
 {
     // Danger: if another thread is actively altering this object before
@@ -145,12 +145,6 @@ inline ThreadContext<Work_T>::ThreadContext(ThreadContext<Work_T>& Other) :
     Other.Shutdown = true;
     Other.Sync.unlock();
     Sync.unlock();
-}
-
-template<class Work_T>
-inline ThreadContext<Work_T>::ThreadContext(ThreadContext<Work_T>&& Other) :
-    ThreadContext<Work_T>(Other)
-{
 }
 
 template<class Work_T>
