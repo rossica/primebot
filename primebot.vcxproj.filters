@@ -21,9 +21,6 @@
     <ClCompile Include="prime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="asyncPrimeSearching.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="PrimeTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
