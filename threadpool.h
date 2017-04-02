@@ -22,7 +22,7 @@ private:
 	std::condition_variable_any WaitVariable;
 	std::atomic_bool Stopping;
     std::atomic_bool Stopped;
-	int ThreadCount;
+    unsigned int ThreadCount;
 
 	void ThreadFunc();
 
@@ -44,14 +44,14 @@ public:
 
 	void Stop();
 
-	int GetThreadCount() { return ThreadCount; }
+    unsigned int GetThreadCount() { return ThreadCount; }
 };
 
 template<class T,class C>
 Threadpool<T,C>::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool<T,C>&, T)>&& ProcessWorkitemFunc, std::function<void(Threadpool<T,C>&, T)>&& ProcessResultFunc) :
+    ThreadCount(ThreadCount),
     ProcessWorkItem(std::move(ProcessWorkitemFunc)),
-    ProcessResult(std::move(ProcessResultFunc)),
-    ThreadCount(ThreadCount)
+    ProcessResult(std::move(ProcessResultFunc))
 {
 	Initialize();
 }
@@ -65,7 +65,7 @@ Threadpool<T,C>::~Threadpool()
 template<class T,class C>
 inline void Threadpool<T,C>::Initialize()
 {
-	for (int i = 0; i < ThreadCount; i++)
+	for (unsigned i = 0; i < ThreadCount; i++)
 	{
 		Threads.push_back(std::thread(std::bind(&Threadpool::ThreadFunc, this)));
 	}
@@ -96,7 +96,7 @@ inline void Threadpool<T,C>::Stop()
         WaitVariable.notify_all();
     }
 
-	for (int i = 0; i < Threads.size(); i++)
+	for (unsigned i = 0; i < Threads.size(); i++)
 	{
 		if (Threads[i].joinable())
 		{

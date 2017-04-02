@@ -16,11 +16,20 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2ipdef.h>
+#define s_addr S_un.S_addr
+#define socklen_t int
 typedef SOCKET NETSOCK;
 inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
 #elif defined __linux__
+#include <string.h>
+#include <netinet/ip.h>
+#include <unistd.h>
 typedef int NETSOCK;
 #define INVALID_SOCKET (-1)
+#define in4addr_loopback INADDR_LOOPBACK
+#define SD_BOTH SHUT_RDWR
+#define SD_SEND SHUT_WR
+#define closesocket close
 inline bool IsSocketValid(NETSOCK sock) { return sock > 0; }
 #endif
 
@@ -117,7 +126,7 @@ inline bool operator<(const AddressType& Left, const AddressType& Right)
 
     if (Left.IPv4.sin_family == AF_INET)
     {
-        return (Left.IPv4.sin_addr.S_un.S_addr < Right.IPv4.sin_addr.S_un.S_addr);
+        return (Left.IPv4.sin_addr.s_addr < Right.IPv4.sin_addr.s_addr);
     }
 
     return (memcmp(&Left.IPv6.sin6_addr, &Right.IPv6.sin6_addr, sizeof(sockaddr_in6)) < 0);
@@ -133,7 +142,7 @@ private:
     Primebot* Bot;
 
     // handles incoming requests, for client and server
-    void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock);
+    void HandleRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock);
 
     void HandleRegisterClient(NetworkConnectionInfo& ClientSock);
     void HandleRequestWork(NetworkConnectionInfo& ClientSock);

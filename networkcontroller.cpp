@@ -4,9 +4,9 @@
 
 
 #if defined(_WIN32) || defined(_WIN64)
-#define ReportError(Msg) std::cerr << WSAGetLastError() << " at " << Msg << std::endl;
+#define ReportError(Msg) std::cerr << WSAGetLastError() << " at " << __FUNCTION__ << Msg << std::endl;
 #elif defined __linux__
-#define ReportError(Msg) std::cerr << errno << " at " << Msg << std::endl
+#define ReportError(Msg) std::cerr << strerror(errno) << " at " << __FUNCTION__ << Msg << std::endl
 #endif
 
 #define STRING_BASE (62)
@@ -23,7 +23,7 @@ void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo 
     Result = recv(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result))
     {
-        ReportError(__FUNCTION__" recv header");
+        ReportError(" recv header");
         return;
     }
 
@@ -81,7 +81,7 @@ bool NetworkController::RegisterClient()
     Header.Type = NetworkMessageType::RegisterClient;
     if (!IsSocketValid(send(Socket, (char*)&Header, sizeof(Header), 0)))
     {
-        ReportError(__FUNCTION__);
+        ReportError("");
         return false;
     }
 
@@ -107,7 +107,7 @@ unique_mpz NetworkController::RequestWork()
     Result = send(Socket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result))
     {
-        ReportError(__FUNCTION__" send header");
+        ReportError(" send header");
         return nullptr;
     }
 
@@ -116,7 +116,7 @@ unique_mpz NetworkController::RequestWork()
     Result = recv(Socket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result) || Result == 0)
     {
-        ReportError(__FUNCTION__" recv header");
+        ReportError(" recv header");
         return nullptr;
     }
 
@@ -124,7 +124,7 @@ unique_mpz NetworkController::RequestWork()
 
     if (Header.Size < 1 || Header.Size > (INT_MAX >> 1))
     {
-        ReportError(__FUNCTION__" header size invalid");
+        ReportError(" header size invalid");
         return nullptr;
     }
 
@@ -136,7 +136,7 @@ unique_mpz NetworkController::RequestWork()
         Result = recv(Socket, Data.get() + ReceivedData, Header.Size - ReceivedData, 0);
         if (!IsSocketValid(Result) || Result == 0)
         {
-            ReportError(__FUNCTION__" recv data");
+            ReportError(" recv data");
         }
         ReceivedData += Result;
 
@@ -178,7 +178,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     Result = send(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result))
     {
-        ReportError(__FUNCTION__" send header");
+        ReportError(" send header");
         return;
     }
 
@@ -194,7 +194,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
 
         if (!IsSocketValid(Result))
         {
-            ReportError(__FUNCTION__" send work");
+            ReportError(" send work");
         }
         SentData += Result;
 
@@ -214,7 +214,7 @@ bool NetworkController::ReportWork(__mpz_struct& WorkItem)
     Result = send(Socket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result))
     {
-        ReportError(__FUNCTION__" send header");
+        ReportError(" send header");
         return false;
     }
 
@@ -229,7 +229,7 @@ bool NetworkController::ReportWork(__mpz_struct& WorkItem)
 
         if (!IsSocketValid(Result))
         {
-            ReportError(__FUNCTION__" send work");
+            ReportError(" send work");
             return false;
         }
         SentData += Result;
@@ -251,7 +251,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
 
     if (Size < 0 || Size > (INT_MAX >> 1))
     {
-        std::cerr << __FUNCTION__" failed size requirements" << std::endl;
+        std::cerr << __FUNCTION__ << " failed size requirements" << std::endl;
         return;
     }
 
@@ -265,7 +265,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
         Result = recv(ClientSock.ClientSocket, Data.get() + ReceivedData, Size - ReceivedData, 0);
         if (!IsSocketValid(Result) || Result == 0)
         {
-            ReportError(__FUNCTION__" failed recv");
+            ReportError(" failed recv");
             return;
         }
         ReceivedData += Result;
@@ -337,7 +337,7 @@ void NetworkController::ListenLoop()
         NetworkConnectionInfo ConnInfo = { 0 };
         //memset(ConnInfo.get(), 0, sizeof(NetworkConnectionInfo));
         
-        int ConnInfoAddrSize = sizeof(ConnInfo.IPv6);
+        socklen_t ConnInfoAddrSize = sizeof(ConnInfo.IPv6);
 
         ConnInfo.ClientSocket = accept(ListenSocket, (sockaddr*)&ConnInfo.IPv6, &ConnInfoAddrSize);
 
@@ -361,7 +361,7 @@ void NetworkController::ClientBind()
                     (sockaddr*)&ClientAny.IPv4,
                     sizeof(ClientAny.IPv4))))
         {
-            ReportError(__FUNCTION__" bind IPv4");
+            ReportError(" bind IPv4");
         }
     }
     else
@@ -374,7 +374,7 @@ void NetworkController::ClientBind()
                     (sockaddr*)&ClientAny.IPv6,
                     sizeof(ClientAny.IPv6))))
         {
-            ReportError(__FUNCTION__"bind IPv6");
+            ReportError("bind IPv6");
         }
     }
 }
@@ -391,7 +391,7 @@ void NetworkController::ServerBind()
                     (sockaddr*)&Settings.IPv4,
                     sizeof(Settings.IPv4))))
         {
-            ReportError(__FUNCTION__" bind IPv4");
+            ReportError(" bind IPv4");
         }
     }
     else
@@ -404,7 +404,7 @@ void NetworkController::ServerBind()
                     (sockaddr*)&Settings.IPv6,
                     sizeof(Settings.IPv6))))
         {
-            ReportError(__FUNCTION__" bind IPv6");
+            ReportError(" bind IPv6");
         }
     }
 }
@@ -416,7 +416,7 @@ NETSOCK NetworkController::GetSocketTo(sockaddr_in6& Client)
     NETSOCK Socket = socket(Client.sin6_family, SOCK_STREAM, IPPROTO_TCP);
     if (!IsSocketValid(Socket))
     {
-        ReportError(__FUNCTION__" socket creation");
+        ReportError(" socket creation");
     }
 
     setsockopt(Socket, SOL_SOCKET, SO_REUSEADDR, (char*)&Enable, sizeof(Enable));
@@ -430,7 +430,7 @@ NETSOCK NetworkController::GetSocketTo(sockaddr_in6& Client)
                 sizeof(sockaddr_in));
         if (!IsSocketValid(Result))
         {
-            ReportError(__FUNCTION__" connect ipv4");
+            ReportError(" connect ipv4");
             closesocket(Socket);
         }
     }
@@ -443,7 +443,7 @@ NETSOCK NetworkController::GetSocketTo(sockaddr_in6& Client)
                 sizeof(Client));
         if (!IsSocketValid(Result))
         {
-            ReportError(__FUNCTION__" connect IPv6");
+            ReportError(" connect IPv6");
             closesocket(Socket);
         }
     }
@@ -457,19 +457,19 @@ NETSOCK NetworkController::GetSocketToServer()
 }
 
 NetworkController::NetworkController(NetworkControllerSettings Config) :
-    ListenSocket(INVALID_SOCKET),
     Settings(Config),
-    Bot(nullptr),
     tp(
         2 * std::thread::hardware_concurrency(),
         std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&NetworkController::CleanupRequest, this, std::placeholders::_1, std::placeholders::_2))
+        std::bind(&NetworkController::CleanupRequest, this, std::placeholders::_1, std::placeholders::_2)),
+    ListenSocket(INVALID_SOCKET),
+    Bot(nullptr)
 {
 #if defined(_WIN32) || defined(_WIN64)
     WSAData WsData;
     if (WSAStartup(MAKEWORD(2, 2), &WsData) != NO_ERROR)
     {
-        ReportError(__FUNCTION__);
+        ReportError("");
     }
 #endif
 
@@ -507,7 +507,7 @@ void NetworkController::Start()
     ListenSocket = socket(Settings.IPv4.sin_family, SOCK_STREAM, IPPROTO_TCP);
     if (!IsSocketValid(ListenSocket))
     {
-        ReportError(__FUNCTION__" socket creation");
+        ReportError(" socket creation");
     }
 
     if (Settings.Server)
@@ -522,7 +522,7 @@ void NetworkController::Start()
     Result = listen(ListenSocket, SOMAXCONN);
     if (!IsSocketValid(Result))
     {
-        ReportError(__FUNCTION__" listen");
+        ReportError(" listen");
     }
     
     // Actually start waiting for connections
