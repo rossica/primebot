@@ -2,11 +2,12 @@
 
 #include<vector>
 #include<algorithm>
+#include<numeric>
 #pragma warning( push )
 #pragma warning( disable: 4146 )
 #include "gmp.h"
 #include "gmpxx.h"
-#pragma warning( pop )
+#pragma warning( pop ) 
 #include<iostream>
 #include <memory>
 #include <cstdlib>
@@ -18,33 +19,80 @@
 
 #include "PrimeTest.h"
 
+template<typename INTEGER>
+INTEGER odd(INTEGER in) {
+    return (2*in) + 1;
+}
+
+//start maps to odd numbers, so start = 1 maps to 2*1 + 1 = 3.
 template<typename T>
-std::vector<T> merge(std::vector<T> first, std::vector<T> second){
-	std::vector<T> merged;
-	std::merge(std::begin(first), std::end(first), std::begin(second), std::end(second), std::back_inserter(merged));
-	return merged;
+std::vector<T> primesInRange(T start, T finish) {
+    std::vector<T> primes;
+    for (T primeCandidate = odd(start); primeCandidate != odd(finish); primeCandidate = primeCandidate + 2) {
+        if (isLikelyPrime(primeCandidate)) {
+            primes.push_back(primeCandidate);
+        }
+    }
+    return primes;
 }
 
 template<typename T>
-std::vector<T> congruentPrimes(T start, T step, T total) {
-	std::vector<T> primes;
-	for (T i = 0; i != total; i++) {
-		T primeCandidate = start + i*step;
-		if (isLikelyPrime(primeCandidate)) {
-			primes.push_back(primeCandidate);
-		}
-	}
-	return primes;
+std::vector<T> concatenate(std::vector<T> first, std::vector<T> second) {
+    first.insert(std::end(first), 
+        std::make_move_iterator(std::begin(second)), 
+    	std::make_move_iterator(std::end(second)) 
+    );
+    return first;
+}
+
+//Takes elements [x1, x2, x3, x4] to [g(x1, x2), g(x2, x3), g(x3, x4)]
+template<typename T, typename G>
+auto applyPairwise(G g, std::vector<T> elements) {
+    std::vector<decltype(g(elements[0], elements[0]))> results;
+    for (int i = 0; i != (elements.size()-1); i++) {
+        results.push_back(g(elements[i], elements[i + 1]));
+    }
+    return results;
 }
 
 template<typename T>
-std::vector<T> findPrimes(T start, T groupSize) {
-	const T threadNumber = 8;
-	auto primesOne = std::async(congruentPrimes<T>, start, threadNumber, groupSize);
-	auto primesTwo = std::async(congruentPrimes<T>, start + 2, threadNumber, groupSize);
-	auto primesThree = std::async(congruentPrimes<T>, start + 4, threadNumber, groupSize);
-	auto primesFour = std::async(congruentPrimes<T>, start + 6, threadNumber, groupSize);
-	auto first_half = merge(primesOne.get(), primesTwo.get());
-	auto second_half = merge(primesThree.get(), primesFour.get());
-	return merge(std::move(first_half), std::move(second_half));
+std::vector<T> partitionBorders(int numberOfPartitions, T start, T finish) {
+    std::vector<T> results;
+    T total = finish - start;
+    results.push_back(start);
+    for (int i = 0; i != numberOfPartitions; ++i) {
+        results.push_back(results[i] + (total + i)/numberOfPartitions);
+    }
+    return results;
+}
+
+template<typename T, typename Unaryop>
+auto map(Unaryop op, std::vector<T> in){
+    std::vector<decltype(op(in[0]))> results;
+    for (auto& e : in)
+        results.push_back(op(e));
+    return results;
+}
+
+template<typename T, typename S, typename BinaryOp>
+auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
+    return std::accumulate(std::begin(factors), std::end(factors), init, op);
+}
+
+template<typename T>
+std::vector<T> findPrimes(T start, T finish) {
+    int threadTotal = std::thread::hardware_concurrency();
+    if (threadTotal == 0) return std::vector<T>{};
+    auto calculatePartition = [](T start, T end) {return std::async(primesInRange<T>, start, end); };
+    return 
+        accumulate( concatenate<T>, std::vector<T>{},
+            map( [](auto& x) {return x.get(); },
+                applyPairwise( calculatePartition,
+                    partitionBorders( threadTotal,
+                        start, 
+                        finish
+                    )    
+                )
+            )
+        );
 }
