@@ -2,6 +2,15 @@
 
 #include <memory>
 #include <set>
+#include <list>
+#include "threadpool.h"
+#include "prime.h"
+
+#pragma warning( push )
+#pragma warning( disable: 4146 )
+#pragma warning( disable: 4800 )
+#include "gmp.h"
+#pragma warning( pop )
 
 // Cross-platform development, here we come...
 #ifdef _WIN32
@@ -17,6 +26,9 @@ inline bool IsSocketValid(NETSOCK sock) { return sock > 0; }
 
 // Forward Declarations
 class Primebot;
+
+#define SERVER_PORT (htons(60000))
+#define CLIENT_PORT (htons(60001))
 
 struct NetworkControllerSettings
 {
@@ -67,6 +79,7 @@ union AddressType
 {
     sockaddr_in IPv4;
     sockaddr_in6 IPv6;
+
     AddressType(sockaddr_in6& ip6)
     {
         IPv6 = ip6;
@@ -81,10 +94,16 @@ union AddressType
             IPv6.sin6_addr = { 0 };
         }
     }
+
     AddressType(sockaddr_in& ip4)
     {
         IPv4 = ip4;
         IPv4.sin_port = 0;
+    }
+
+    AddressType()
+    {
+        IPv6 = { 0 };
     }
 };
 
@@ -108,12 +127,13 @@ class NetworkController
 {
 private:
     NetworkControllerSettings Settings;
+    Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> tp;
     std::set<AddressType> Clients;
     NETSOCK ListenSocket;
     Primebot* Bot;
 
     // handles incoming requests, for client and server
-    void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock);
+    void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock);
 
     void HandleRegisterClient(NetworkConnectionInfo& ClientSock);
     void HandleRequestWork(NetworkConnectionInfo& ClientSock);
@@ -121,7 +141,7 @@ private:
     void HandleUnregisterClient(NetworkConnectionInfo& ClientSock);
     void HandleShutdownClient(NetworkConnectionInfo& ServerSock);
 
-    void CleanupRequest(NetworkConnectionInfo ClientSock);
+    void CleanupRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock);
 
     void ListenLoop();
     void ClientBind();
@@ -137,9 +157,9 @@ public:
 
     void SetPrimebot(Primebot* bot) { Bot = bot; }
 
-    void RegisterClient();
-    int RequestWork();
-    void ReportWork(int WorkItem);
+    bool RegisterClient();
+    unique_mpz RequestWork();
+    bool ReportWork(__mpz_struct& WorkItem);
     void UnregisterClient();
     void ShutdownClients();
 };

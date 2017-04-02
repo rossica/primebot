@@ -4,6 +4,7 @@
 
 #pragma warning( push )
 #pragma warning( disable: 4146 )
+#pragma warning( disable: 4800 )
 #include "gmp.h"
 #include "gmpxx.h"
 #pragma warning( pop )

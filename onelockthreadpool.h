@@ -17,15 +17,15 @@ private:
     std::recursive_mutex Sync;
     bool Shutdown;
     void ThreadFunc();
-    std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem;
-    std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult;
+    std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessWorkitem;
+    std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessResult;
 public:
     const OneLockThreadpool<Work_T>& Pool;
     void EnqueueWork(Work_T Work);
     void EnqueueResult(Work_T Result);
     void Stop();
     ThreadContext() = delete;
-    ThreadContext(OneLockThreadpool<Work_T>& Parent, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult);
+    ThreadContext(OneLockThreadpool<Work_T>& Parent, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessResult);
     ThreadContext(ThreadContext<Work_T>&) = delete;
     ThreadContext(ThreadContext<Work_T>&&);
     ~ThreadContext();
@@ -39,12 +39,12 @@ private:
     unsigned int CurrentThread;
     unsigned int ThreadCount;
 
-    void Initialize(std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult);
+    void Initialize(std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessResult);
 
 public:
     OneLockThreadpool() = delete;
     OneLockThreadpool(const OneLockThreadpool&) = delete;
-    OneLockThreadpool(unsigned int ThreadCount, std::function<void(ThreadContext<Work_T>&, Work_T)> WorkProc, std::function<void(ThreadContext<Work_T>&, Work_T)> ResultProc);
+    OneLockThreadpool(unsigned int ThreadCount, std::function<void(ThreadContext<Work_T>&, Work_T&&)> WorkProc, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ResultProc);
     ~OneLockThreadpool();
 
     void EnqueueWorkItem(Work_T WorkItem);
@@ -114,7 +114,7 @@ inline void ThreadContext<Work_T>::ThreadFunc()
 }
 
 template<class Work_T>
-inline ThreadContext<Work_T>::ThreadContext(OneLockThreadpool<Work_T>& Parent, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult) :
+inline ThreadContext<Work_T>::ThreadContext(OneLockThreadpool<Work_T>& Parent, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessResult) :
     Shutdown(false),
     ProcessWorkitem(ProcessWorkitem),
     ProcessResult(ProcessResult),
@@ -154,7 +154,7 @@ inline ThreadContext<Work_T>::~ThreadContext()
 }
 
 template<class Work_T>
-inline void OneLockThreadpool<Work_T>::Initialize(std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T)> ProcessResult)
+inline void OneLockThreadpool<Work_T>::Initialize(std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessWorkitem, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ProcessResult)
 {
     for (unsigned int i = 0; i < ThreadCount; i++)
     {
@@ -164,7 +164,7 @@ inline void OneLockThreadpool<Work_T>::Initialize(std::function<void(ThreadConte
 }
 
 template<class Work_T>
-inline OneLockThreadpool<Work_T>::OneLockThreadpool(unsigned int ThreadCount, std::function<void(ThreadContext<Work_T>&, Work_T)> WorkProc, std::function<void(ThreadContext<Work_T>&, Work_T)> ResultProc)
+inline OneLockThreadpool<Work_T>::OneLockThreadpool(unsigned int ThreadCount, std::function<void(ThreadContext<Work_T>&, Work_T&&)> WorkProc, std::function<void(ThreadContext<Work_T>&, Work_T&&)> ResultProc)
 {
     this->ThreadCount = ThreadCount;
     CurrentThread = 0;

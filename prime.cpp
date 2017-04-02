@@ -1,64 +1,55 @@
 #include "prime.h"
 #include "PrimeTest.h"
 #include "networkcontroller.h"
-
+#include "asyncPrimeSearching.h"
+#pragma warning( push )
+#pragma warning( disable: 4146 )
+#pragma warning( disable: 4800 )
+#include "gmp.h"
+#include "gmpxx.h"
+#pragma warning( pop )
 #include <iostream>
 
 
-void Primebot::FindPrime(ThreadContext<unique_mpz>& pool, unique_mpz workitem)
+void Primebot::FindPrime(decltype(tp)& pool, unique_mpz&& workitem)
 {
-    // Implementation using GMP
-    //if (mpz_cmp_ui(workitem.get(), 1000) < 0)
-    //{
-    //    if (mpz_probab_prime_p(workitem.get(), 20) > 0)
-    //    {
-    //        pool.EnqueueResult(std::move(workitem));
-    //    }
-    //    else
-    //    {
-    //        mpz_add_ui(workitem.get(), workitem.get(), 2 * pool.Pool.GetThreadCount());
-    //        pool.EnqueueWork(std::move(workitem));
-    //    }
-    //}
-    //else
-    //{
-    //    mpz_clear(workitem.get());
-    //}
-
-    if (*workitem < 100000)
+    // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
+    // composite number will pass the nth iteration of the test.
+    // The below selects the bit-length of the candidate prime, divided by 2
+    // as the number of iterations to perform.
+    // This has the property of putting the probability of a composite passing
+    // the test to be less than the count of possible numbers for a given bit-length.
+    // Or so I think...
+    if (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2)/2)))
     {
-        if (isLikelyPrime(*workitem))
-        {
-            pool.EnqueueResult(std::move(workitem));
-        }
-        else
-        {
-            *workitem = *workitem + (2 * pool.Pool.GetThreadCount());
-            pool.EnqueueWork(std::move(workitem));
-        }
+        pool.EnqueueResult(std::move(workitem));
     }
     else
     {
+        mpz_add_ui(workitem.get(), workitem.get(), 2 * pool.GetThreadCount());
+        pool.EnqueueWorkItem(std::move(workitem));
     }
 }
 
-void Primebot::FoundPrime(ThreadContext<unique_mpz>& pool, unique_mpz result)
+void Primebot::FoundPrime(decltype(tp)& pool, unique_mpz&& result)
 {
-    // Implementation using GMP
-    //gmp_printf("%Zd is prime!\n", result);
-    //mpz_add_ui(result.get(), result.get(), 2 * pool.Pool.GetThreadCount());
-
     if (Controller != nullptr)
     {
-        Controller->ReportWork(*result);
+        if (!Controller->ReportWork(*result))
+        {
+            // Failed to send work, try again
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            pool.EnqueueWorkItem(std::move(result));
+            return;
+        }
     }
     else
     {
-        std::cout << *result << std::endl;
+        gmp_printf("%Zd\n", result.get());
     }
 
-    *result = *result + (2 * pool.Pool.GetThreadCount());
-    pool.EnqueueWork(std::move(result));
+    mpz_add_ui(result.get(), result.get(), (2 * pool.GetThreadCount()));
+    pool.EnqueueWorkItem(std::move(result));
 }
 
 Primebot::Primebot(unsigned int ThreadCount, NetworkController* NetController) :
@@ -75,34 +66,48 @@ Primebot::~Primebot()
 
 void Primebot::Start()
 {
+    unique_mpz Start(nullptr);
+
     if (Controller != nullptr)
     {
-        Controller->RegisterClient();
-        int Start = Controller->RequestWork();
-        for (int i = 1; i <= tp.GetThreadCount(); i++)
+        while (!Controller->RegisterClient())
         {
-            tp.EnqueueWorkItem(std::make_unique<int>((2 * i) + Start));
+            // Failed to register client, try again
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+
+        Start = Controller->RequestWork();
+        while (Start == nullptr)
+        {
+            // Failed to get work item, try again.
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            Start = Controller->RequestWork();
         }
     }
     else
     {
         // generate a large, random, odd number
-        // add it to the threadpool
-        // add 2
-        // add it to the threadpool
-        // repeat
-
-        for (int i = 1; i <= tp.GetThreadCount(); i++)
-        {
-            // implementation using GMP
-            //unique_mpz foo(new __mpz_struct);
-            //mpz_init(foo.get());
-            //mpz_set_ui(foo.get(), (2 * i) + 1);
-            //tp.EnqueueWorkItem(std::move(foo));
-
-            tp.EnqueueWorkItem(std::make_unique<int>((2 * i) + 1));
-        }
+        // and assign it to Start;
     }
+
+    for (unsigned int i = 1; i <= tp.GetThreadCount(); i++)
+    {
+        unique_mpz work(new __mpz_struct);
+        // ((2 * i) + Start)
+        mpz_init_set(work.get(), Start.get());
+        mpz_add_ui(work.get(), work.get(), (2 * i));
+        tp.EnqueueWorkItem(std::move(work));
+    }
+
+    // Async implementation
+    //mpz_class foo(Start.get());
+    //mpz_class total(10000);
+    //auto Results = findPrimes(foo, total);
+
+    //for (auto res : Results)
+    //{
+    //    Controller->ReportWork(*res.get_mpz_t());
+    //}
 }
 
 void Primebot::Stop()
