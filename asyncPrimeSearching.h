@@ -68,9 +68,9 @@ std::vector<T> partitionBorders(int numberOfPartitions, T start, T finish) {
 
 template<typename T, typename Unaryop>
 auto map(Unaryop op, std::vector<T> in){
-    std::vector<decltype(op(in[0]))> results;
-    for (auto& e : in)
-        results.push_back(op(e));
+    std::vector<decltype(op(std::move(in[0])))> results;
+    for (int i = 0; i != in.size(); i++)
+        results.push_back(op(std::move(in[i])));
     return results;
 }
 
@@ -86,7 +86,7 @@ std::vector<T> findPrimes(T start, T finish) {
     auto calculatePartition = [](T start, T end) {return std::async(primesInRange<T>, start, end); };
     return 
         accumulate( concatenate<T>, std::vector<T>{},
-            map( [](auto& x) {return x.get(); },
+            map( [](auto x) {return x.get(); },
                 applyPairwise( calculatePartition,
                     partitionBorders( threadTotal,
                         start, 
