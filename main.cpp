@@ -67,13 +67,13 @@ int main(int argc, char** argv)
     if (argc > 1 && strcmp(argv[1], "-c") == 0)
     {
         // client code
-        NetworkControllerSettings NetSettings = { 0 };
-        NetSettings.IPv4.sin_family = AF_INET;
-        NetSettings.IPv4.sin_addr.s_addr = in4addr_loopback;
-        NetSettings.IPv4.sin_port = htons(60000);
-        NetSettings.Server = false;
+        AllSettings Settings;
+        Settings.NetworkSettings.IPv4.sin_family = AF_INET;
+        Settings.NetworkSettings.IPv4.sin_addr = in4addr_loopback;
+        Settings.NetworkSettings.IPv4.sin_port = htons(60000);
+        Settings.NetworkSettings.Server = false;
 
-        NetworkController netcon(NetSettings);
+        NetworkController netcon(Settings);
 
         Primebot pb(std::thread::hardware_concurrency(), &netcon);
         netcon.SetPrimebot(&pb);
@@ -89,12 +89,12 @@ int main(int argc, char** argv)
     else if (argc > 1 && strcmp(argv[1], "-s") == 0)
     {
         // server
-        NetworkControllerSettings NetSettings = { 0 };
-        NetSettings.IPv4.sin_family = AF_INET;
-        NetSettings.IPv4.sin_addr.s_addr = in4addr_loopback;
-        NetSettings.Server = true;
+        AllSettings Settings;
+        Settings.NetworkSettings.IPv4.sin_family = AF_INET;
+        Settings.NetworkSettings.IPv4.sin_addr= in4addr_loopback;
+        Settings.NetworkSettings.Server = true;
 
-        NetworkController netsrv(NetSettings);
+        NetworkController netsrv(Settings);
         netsrv.Start();
     }
 

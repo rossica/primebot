@@ -53,7 +53,7 @@ void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo 
         }
         break;
     case NetworkMessageType::ShutdownClient:
-        if (!Settings.Server)
+        if (!Settings.NetworkSettings.Server)
         {
             HandleShutdownClient(ClientSock);
         }
@@ -157,17 +157,9 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     size_t Size;
     int SentData = 0;
     NETSOCK Result;
-    gmp_randstate_t Rand;
-    mp_bitcnt_t Bits = 512;
 
-    gmp_randinit_mt(Rand);
-    // TODO: make this seed configurable
-    gmp_randseed_ui(Rand, 1234);
-
-    unique_mpz Work(new __mpz_struct);
-    //mpz_init_set_ui(Work.get(), 1);
-    mpz_init(Work.get());
-    mpz_urandomb(Work.get(), Rand, Bits);
+    //unique_mpz Work(GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed));
+    unique_mpz Work;
 
     Size = mpz_sizeinbase(Work.get(), STRING_BASE) + 2;
 
@@ -324,7 +316,7 @@ void NetworkController::ShutdownClients()
 
 void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
 {
-    if (memcmp(&Settings.IPv6, &ServerSock.IPv6, sizeof(Settings.IPv6)) == 0)
+    if (memcmp(&Settings.NetworkSettings.IPv6, &ServerSock.IPv6, sizeof(Settings.NetworkSettings.IPv6)) == 0)
     {
         Bot->Stop();
     }
@@ -352,7 +344,7 @@ void NetworkController::ClientBind()
     AddressType ClientAny;
 
     // match IP family and port number of server, because I'm lazy
-    if (Settings.IPv4.sin_family == AF_INET)
+    if (Settings.NetworkSettings.IPv4.sin_family == AF_INET)
     {
         ClientAny.IPv4.sin_port = CLIENT_PORT;//Settings.IPv4.sin_port;
         if (!IsSocketValid(
@@ -381,28 +373,28 @@ void NetworkController::ClientBind()
 
 void NetworkController::ServerBind()
 {
-    if (Settings.IPv4.sin_family == AF_INET)
+    if (Settings.NetworkSettings.IPv4.sin_family == AF_INET)
     {
-        Settings.IPv4.sin_port = SERVER_PORT;
+        //Settings.NetworkSettings.IPv4.sin_port = SERVER_PORT;
 
         if (!IsSocketValid(
                 bind(
                     ListenSocket,
-                    (sockaddr*)&Settings.IPv4,
-                    sizeof(Settings.IPv4))))
+                    (sockaddr*)&Settings.NetworkSettings.IPv4,
+                    sizeof(Settings.NetworkSettings.IPv4))))
         {
             ReportError(" bind IPv4");
         }
     }
     else
     {
-        Settings.IPv6.sin6_port = SERVER_PORT;
+        //Settings.NetworkSettings.IPv6.sin6_port = SERVER_PORT;
 
         if (!IsSocketValid(
                 bind(
                     ListenSocket,
-                    (sockaddr*)&Settings.IPv6,
-                    sizeof(Settings.IPv6))))
+                    (sockaddr*)&Settings.NetworkSettings.IPv6,
+                    sizeof(Settings.NetworkSettings.IPv6))))
         {
             ReportError(" bind IPv6");
         }
@@ -453,10 +445,10 @@ NETSOCK NetworkController::GetSocketTo(sockaddr_in6& Client)
 
 NETSOCK NetworkController::GetSocketToServer()
 {
-    return GetSocketTo(Settings.IPv6);
+    return GetSocketTo(Settings.NetworkSettings.IPv6);
 }
 
-NetworkController::NetworkController(NetworkControllerSettings Config) :
+NetworkController::NetworkController(AllSettings Config) :
     Settings(Config),
     tp(
         2 * std::thread::hardware_concurrency(),
@@ -473,7 +465,7 @@ NetworkController::NetworkController(NetworkControllerSettings Config) :
     }
 #endif
 
-    if (!Settings.Server)
+    if (!Settings.NetworkSettings.Server)
     {
         // Threadpool unused on client, so kill it
         tp.Stop();
@@ -491,7 +483,7 @@ NetworkController::~NetworkController()
     WSACleanup();
 #endif
 
-    if (Settings.Server)
+    if (Settings.NetworkSettings.Server)
     {
         tp.Stop();
     }
@@ -504,13 +496,13 @@ void NetworkController::Start()
     // Clients and servers both listen on a socket for incoming connections
     // Clients just need to make sure the connection is from the server.
 
-    ListenSocket = socket(Settings.IPv4.sin_family, SOCK_STREAM, IPPROTO_TCP);
+    ListenSocket = socket(Settings.NetworkSettings.IPv4.sin_family, SOCK_STREAM, IPPROTO_TCP);
     if (!IsSocketValid(ListenSocket))
     {
         ReportError(" socket creation");
     }
 
-    if (Settings.Server)
+    if (Settings.NetworkSettings.Server)
     {
         ServerBind();
     }
@@ -526,7 +518,7 @@ void NetworkController::Start()
     }
     
     // Actually start waiting for connections
-    if (Settings.Server)
+    if (Settings.NetworkSettings.Server)
     {
         // This will never return
         ListenLoop();

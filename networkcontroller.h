@@ -12,45 +12,11 @@
 #include "gmp.h"
 #pragma warning( pop )
 
-// Cross-platform development, here we come...
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2ipdef.h>
-#define s_addr S_un.S_addr
-#define socklen_t int
-typedef SOCKET NETSOCK;
-inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
-#elif defined __linux__
-#include <string.h>
-#include <netinet/ip.h>
-#include <unistd.h>
-typedef int NETSOCK;
-#define INVALID_SOCKET (-1)
-#define in4addr_loopback INADDR_LOOPBACK
-#define SD_BOTH SHUT_RDWR
-#define SD_SEND SHUT_WR
-#define closesocket close
-inline bool IsSocketValid(NETSOCK sock) { return sock > 0; }
-#endif
+#include "pal.h"
+#include "commandparser.h"
 
 // Forward Declarations
 class Primebot;
-
-#define SERVER_PORT (htons(60000))
-#define CLIENT_PORT (htons(60001))
-
-struct NetworkControllerSettings
-{
-    union
-    {
-        sockaddr_in IPv4;
-        sockaddr_in6 IPv6;
-    };
-
-    // If true: this is server, listen on address.
-    // If false: this is client, connect to address.
-    bool Server;
-};
 
 struct NetworkConnectionInfo
 {
@@ -135,7 +101,7 @@ inline bool operator<(const AddressType& Left, const AddressType& Right)
 class NetworkController
 {
 private:
-    NetworkControllerSettings Settings;
+    AllSettings Settings;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> tp;
     std::set<AddressType> Clients;
     NETSOCK ListenSocket;
@@ -160,7 +126,7 @@ private:
     NETSOCK GetSocketToServer();
 public:
     NetworkController() = delete;
-    NetworkController(NetworkControllerSettings Config);
+    NetworkController(AllSettings Config);
     ~NetworkController();
     void Start();
 
