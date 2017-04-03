@@ -10,7 +10,9 @@
 typedef SOCKET NETSOCK;
 inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
 #elif defined __linux__
+#define __STDC_WANT_LIB_EXT1__ 1
 #include <string.h>
+#include <cstring>
 #include <sys/types.h>
 #include <netinet/ip.h>
 #include <unistd.h>
@@ -20,5 +22,6 @@ typedef int NETSOCK;
 #define SD_BOTH SHUT_RDWR
 #define SD_SEND SHUT_WR
 #define closesocket close
-inline bool IsSocketValid(NETSOCK sock) { return sock > 0; }
+inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
+#define memcpy_s(dest, destsz, src, srcsz) memcpy(dest, src, destsz)
 #endif

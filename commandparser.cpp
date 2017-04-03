@@ -66,7 +66,8 @@ bool CommandParser::ConfigureSocketAddress(AllPrimebotSettings & Settings, int F
     }
     else
     {
-        memcpy_s(&Settings.NetworkSettings.IPv6,
+        memcpy_s(
+            &Settings.NetworkSettings.IPv6,
             sizeof(Settings.NetworkSettings.IPv6),
             Results->ai_addr,
             Results->ai_addrlen);
@@ -222,7 +223,7 @@ AllPrimebotSettings CommandParser::ParseArguments()
     return Settings;
 }
 
-PrimeSettings::PrimeSettings() :
+PrimebotSettings::PrimebotSettings() :
     UseAsync(false),
     ThreadCount(std::thread::hardware_concurrency()),
     Bitsize(256),

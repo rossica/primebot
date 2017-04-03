@@ -531,3 +531,20 @@ void NetworkController::Start()
     }
 }
 
+inline bool operator<(const AddressType& Left, const AddressType& Right)
+{
+    // Compare address families
+    if (Left.IPv4.sin_family < Right.IPv4.sin_family)
+    {
+        return true;
+    }
+
+    if (Left.IPv4.sin_family == AF_INET)
+    {
+        return (Left.IPv4.sin_addr.s_addr < Right.IPv4.sin_addr.s_addr);
+    }
+
+    return (memcmp(&Left.IPv6.sin6_addr, &Right.IPv6.sin6_addr, sizeof(sockaddr_in6)) < 0);
+}
+
+

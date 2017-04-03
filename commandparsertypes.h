@@ -1,12 +1,11 @@
 #pragma once
 
+#include <string>
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <winsock2.h>
 #include <ws2ipdef.h>
-#include <string>
 #elif defined __linux__
-#include <string.h>
 #include <sys/types.h>
 #include <netinet/ip.h>
 #include <unistd.h>
@@ -37,7 +36,7 @@ struct NetworkControllerSettings
     {}
 };
 
-struct PrimeSettings
+struct PrimebotSettings
 {
     // Use Async prime finding code instead of threadpool
     bool UseAsync;
@@ -48,7 +47,7 @@ struct PrimeSettings
     // Optional seed for the RNG to generate numbers to search
     unsigned int RngSeed;
 
-    PrimeSettings();
+    PrimebotSettings();
 };
 
 struct PrimeFileSettings
@@ -61,7 +60,7 @@ struct PrimeFileSettings
 struct AllPrimebotSettings
 {
     NetworkControllerSettings NetworkSettings;
-    PrimeSettings PrimeSettings;
+    PrimebotSettings PrimeSettings;
     PrimeFileSettings FileSettings;
     // Whether to run the program or not.
     // On failure, this should be false.

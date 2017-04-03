@@ -7,7 +7,6 @@
 //#include "asyncPrimeSearching.h"
 #include "networkcontroller.h"
 #include "commandparser.h"
-#include <string.h>
 
 
 int main(int argc, char** argv)
