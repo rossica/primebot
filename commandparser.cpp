@@ -1,5 +1,5 @@
 #include "commandparser.h"
-
+#include "pal.h"
 #include <thread>
 #include <iostream>
 
@@ -8,71 +8,85 @@
 
 void CommandParser::PrintHelp()
 {
+    std::cout << "Primebot" << std::endl;
     std::cout << "primebot Usage:" << std::endl;
-    std::cout << "primebot [-c <addr> | -s] [-a] [-t <count>] [-p <path>] [-i <seed>] [-b <count>]" << std::endl;
+    std::cout << "primebot [[-c | -s] <addr>] [-a] [-t <cnt>] [-p <path>] [-i <seed>] [-b <cnt>]" << std::endl;
     std::cout << "primebot [-h | -?]" << std::endl;
-    std::cout << "  -c/--client: Configure as a client, connection to server at <address>" << std::endl;
-    std::cout << "  -s/--server: Configure as a server" << std::endl;
-    std::cout << "  -a/--async: Use async routines instead of threadpool" << std::endl;
-    std::cout << "  -t/--threads: Threadcount for threadpool and async" << std::endl;
-    std::cout << "  -p/--path: Path to save discovered primes at. Otherwise print to console" << std::endl;
-    std::cout << "  -i/--seed: Use <seed> for RNG to find starting number" << std::endl;
-    std::cout << "  -b/--bits: Search numbers using at most <count> bits" << std::endl;
+    std::cout << "  -c / --client: Configure as a client, connection to server at <address>" << std::endl;
+    std::cout << "  -s / --server: Configure as a server" << std::endl;
+    std::cout << "  -a / --async: Use async routines instead of threadpool" << std::endl;
+    std::cout << "  -t / --threads: Threadcount for threadpool and async" << std::endl;
+    std::cout << "  -p / --path: Path to save discovered primes at. Otherwise print to console" << std::endl;
+    std::cout << "  -i / --seed: Use <seed> for RNG to find starting number" << std::endl;
+    std::cout << "  -b / --bits: Search numbers using at most <count> bits" << std::endl;
     std::cout << std::endl;
 }
 
-bool CommandParser::ConfigureServer(AllPrimebotSettings& Settings)
+bool CommandParser::ConfigureSocketAddress(AllPrimebotSettings & Settings, int Flags, std::string Address)
+{
+#if defined(_WIN32) || defined(_WIN64)
+    WSAData WsData;
+    int Error = WSAStartup(MAKEWORD(2, 2), &WsData);
+    if (Error != NO_ERROR)
+    {
+        std::cout << gai_strerror(Error) << " at " << __FUNCTION__ << std::endl;
+    }
+#endif
+    addrinfo Hints = { 0 };
+    addrinfo* Results;
+    int Result = 0;
+    Hints.ai_flags = Flags;
+    Hints.ai_socktype = SOCK_STREAM;
+    Hints.ai_protocol = IPPROTO_TCP;
+
+    Result = getaddrinfo(
+        Address.c_str(),
+        nullptr,
+        &Hints,
+        &Results
+    );
+
+    if (Result != 0)
+    {
+        std::cout << gai_strerror(Result) << " on argument: " << Address << std::endl;
+        freeaddrinfo(Results);
+
+        return false;
+    }
+
+    if (Results->ai_family == AF_INET)
+    {
+        memcpy_s(
+            &Settings.NetworkSettings.IPv4,
+            sizeof(Settings.NetworkSettings.IPv4),
+            Results->ai_addr,
+            Results->ai_addrlen);
+
+        Settings.NetworkSettings.IPv4.sin_port = SERVER_PORT;
+    }
+    else
+    {
+        memcpy_s(&Settings.NetworkSettings.IPv6,
+            sizeof(Settings.NetworkSettings.IPv6),
+            Results->ai_addr,
+            Results->ai_addrlen);
+
+        Settings.NetworkSettings.IPv6.sin6_port = SERVER_PORT;
+    }
+    freeaddrinfo(Results);
+    return true;
+}
+
+bool CommandParser::ConfigureServer(AllPrimebotSettings& Settings, std::string Address)
 {
     Settings.NetworkSettings.Server = true;
-    return true;
+    return ConfigureSocketAddress(Settings, AI_V4MAPPED | AI_PASSIVE, Address);
 }
 
 bool CommandParser::ConfigureClient(AllPrimebotSettings& Settings, std::string Address)
 {
-    addrinfo Hints = { 0 };
-    addrinfo* Results;
-    int Result = 0;
-    Hints.ai_flags = AI_V4MAPPED;
-    Hints.ai_socktype = SOCK_STREAM;
-    Hints.ai_protocol = IPPROTO_TCP;
-
-    //Result = getaddrinfo(
-    //    Address.c_str(),
-    //    nullptr,
-    //    &Hints,
-    //    &Results
-    //);
-
-    //if (Result != 0)
-    //{
-    //    std::cout << gai_strerror(Result) << " on argument: " << Address << std::endl;
-    //    freeaddrinfo(Results);
-
-    //    return false;
-    //}
-
-    //if (Results->ai_family == AF_INET)
-    //{
-    //    memcpy_s(
-    //        &Settings.NetworkSettings.IPv4,
-    //        sizeof(Settings.NetworkSettings.IPv4),
-    //        Results->ai_addr,
-    //        Results->ai_addrlen);
-
-    //    Settings.NetworkSettings.IPv4.sin_port = SERVER_PORT;
-    //}
-    //else
-    //{
-    //    memcpy_s(&Settings.NetworkSettings.IPv6,
-    //        sizeof(Settings.NetworkSettings.IPv6),
-    //        Results->ai_addr,
-    //        Results->ai_addrlen);
-
-    //    Settings.NetworkSettings.IPv6.sin6_port = SERVER_PORT;
-    //}
-
-    //freeaddrinfo(Results);
-    return true;
+    Settings.NetworkSettings.Client = true;
+    return ConfigureSocketAddress(Settings, AI_V4MAPPED, Address);
 }
 
 bool CommandParser::ConfigureAsync(AllPrimebotSettings& Settings)
@@ -139,7 +153,7 @@ AllPrimebotSettings CommandParser::ParseArguments()
 {
     AllPrimebotSettings Settings;
 
-    for (int i = 0; i < ArgCount; i++)
+    for (int i = 1; i < ArgCount; i++)
     {
         if (i == 0)
         {
@@ -155,7 +169,9 @@ AllPrimebotSettings CommandParser::ParseArguments()
         }
         else if (CompareArg("--server", Args[i]) || CompareArg("-s", Args[i]))
         {
-            ConfigureServer(Settings);
+            CheckIndexValid(i + 1, Args[i]);
+            i++;
+            ConfigureServer(Settings, Args[i]);
         }
         else if (CompareArg("--async", Args[i]) || CompareArg("-a", Args[i]))
         {
@@ -189,6 +205,7 @@ AllPrimebotSettings CommandParser::ParseArguments()
             CompareArg("-?", Args[i]))
         {
             PrintHelp();
+            Settings.Run = false;
         }
         else if (CompareArg("--", Args[i]))
         {
@@ -197,6 +214,7 @@ AllPrimebotSettings CommandParser::ParseArguments()
         else
         {
             std::cout << "Invalid argument: " << Args[i] << std::endl;
+            Settings.Run = false;
             break; // out of loop
         }
     }

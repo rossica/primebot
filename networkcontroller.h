@@ -19,7 +19,10 @@ typedef int NETSOCK;
 #include <list>
 #include "threadpool.h"
 #include "prime.h"
-#include "commandparser.h"
+#include "commandparsertypes.h"
+
+
+#define CLIENT_PORT (htons(60001))
 
 // Forward Declarations
 //class Primebot;

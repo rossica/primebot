@@ -128,6 +128,7 @@
   <ItemGroup>
     <ClInclude Include="asyncPrimeSearching.h" />
     <ClInclude Include="commandparser.h" />
+    <ClInclude Include="commandparsertypes.h" />
     <ClInclude Include="networkcontroller.h" />
     <ClInclude Include="onelockthreadpool.h" />
     <ClInclude Include="pal.h" />

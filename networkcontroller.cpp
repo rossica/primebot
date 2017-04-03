@@ -159,8 +159,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     int SentData = 0;
     NETSOCK Result;
 
-    //unique_mpz Work(GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed));
-    unique_mpz Work;
+    unique_mpz Work(Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed));
 
     Size = mpz_sizeinbase(Work.get(), STRING_BASE) + 2;
 

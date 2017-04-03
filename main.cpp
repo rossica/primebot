@@ -6,50 +6,12 @@
 //#include "onelockthreadpool.h"
 //#include "asyncPrimeSearching.h"
 #include "networkcontroller.h"
+#include "commandparser.h"
 #include <string.h>
 
-// test code
-/*
-void ProcessPrime(ThreadContext<std::unique_ptr<int>>& thread, std::unique_ptr<int> workitem)
-{
-	if (*workitem < 300)
-	{
-		thread.EnqueueWork(std::make_unique<int>(*workitem + (2 * thread.Pool.GetThreadCount())));
-		for (int i = 0; i < 10000000; i++)
-		{
-			i += *workitem;
-			i -= *workitem;
-		}
-		thread.EnqueueResult(std::move(workitem));
-	}
-}
-
-void ProcessResult(ThreadContext<std::unique_ptr<int>>& thread, std::unique_ptr<int> result)
-{
-	std::cout << *result << std::endl;
-}
-
-OneLockThreadpool<std::unique_ptr<int>> tp(std::thread::hardware_concurrency(), ProcessPrime, ProcessResult);
-*/
 
 int main(int argc, char** argv)
 {
-	//for (unsigned int i = 1; i <= tp.GetThreadCount(); i++)
-	//{
-	//	tp.EnqueueWorkItem(std::make_unique<int>((2*i) + 1));
-	//}
-
-	//std::this_thread::sleep_for(std::chrono::seconds(20));
-	//tp.Stop();
-	//std::this_thread::sleep_for(std::chrono::seconds(60));
-
-	/*
-	Primebot pb(std::thread::hardware_concurrency(), nullptr);
-
-	pb.Start();
-
-	std::this_thread::sleep_for(std::chrono::seconds(60));
-	*/
 
     /*
     mpz_class a = 3;
@@ -63,47 +25,49 @@ int main(int argc, char** argv)
     return 0;
     */
 
-    //AllPrimebotSettings Settings;
-    //CommandParser Parse(argc, argv);
+    AllPrimebotSettings Settings;
+    CommandParser Parse(argc, argv);
 
-    //Settings = Parse.ParseArguments();
+    Settings = Parse.ParseArguments();
 
-
-
-    if (argc > 1 && strcmp(argv[1], "-c") == 0)
+    if (!Settings.Run)
     {
-        // client code
-        //AllPrimebotSettings Settings;
-        //Settings.NetworkSettings.IPv4.sin_family = AF_INET;
-        //Settings.NetworkSettings.IPv4.sin_addr = in4addr_loopback;
-        //Settings.NetworkSettings.IPv4.sin_port = htons(60000);
-        //Settings.NetworkSettings.Server = false;
-
-        //NetworkController netcon(Settings);
-
-
-        //Primebot pb(Settings, &netcon);
-        //netcon.SetPrimebot(&pb);
-
-        //pb.Start();
-
-        //int dummy = 0;
-        //std::cout << "Type anything and press enter to exit.";
-        //std::cin >> dummy;
-
-        //pb.Stop();
+        return 0;
     }
-    else if (argc > 1 && strcmp(argv[1], "-s") == 0)
+
+    if (Settings.NetworkSettings.Server)
     {
-        // server
-        //AllPrimebotSettings Settings;
-        //Settings.NetworkSettings.IPv4.sin_family = AF_INET;
-        //Settings.NetworkSettings.IPv4.sin_addr = in4addr_loopback;
-        //Settings.NetworkSettings.Server = true;
+        // Configure for Server
+        NetworkController netsrv(Settings);
+        netsrv.Start();
+    }
+    else if(Settings.NetworkSettings.Client)
+    {
+        // Configure for client
+        NetworkController netcon(Settings);
+        Primebot pb(Settings, &netcon);
+        netcon.SetPrimebot(&pb);
 
-        //NetworkController netsrv(Settings);
-        //netsrv.Start();
+        pb.Start();
 
+        int dummy = 0;
+        std::cout << "Type anything and press enter to exit.";
+        std::cin >> dummy;
+
+        pb.Stop();
+    }
+    else
+    {
+        // Configure standalone
+        Primebot pb(Settings, nullptr);
+
+        pb.Start();
+
+        int dummy = 0;
+        std::cout << "Type anything and press enter to exit.";
+        std::cin >> dummy;
+
+        pb.Stop();
     }
 
     return 0;

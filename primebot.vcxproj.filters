@@ -56,5 +56,8 @@
     <ClInclude Include="commandparser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="commandparsertypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

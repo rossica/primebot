@@ -1,11 +1,12 @@
 #pragma once
+#include "commandparsertypes.h"
 #pragma warning( push )
 #pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
 #include "gmp.h"
 #pragma warning( pop )
 #include "threadpool.h"
-//#include "commandparser.h"
+
 
 
 struct FreeMpz
@@ -18,7 +19,7 @@ struct FreeMpz
 };
 using unique_mpz = std::unique_ptr<__mpz_struct,FreeMpz>;
 
-unique_mpz GenerateRandomOdd(unsigned int Bits, unsigned int Seed);
+
 
 // Forward Declarations
 class NetworkController;
@@ -28,13 +29,16 @@ class Primebot
 private:
     NetworkController* Controller;
     Threadpool<unique_mpz> tp;
-    //AllPrimebotSettings Settings;
+    AllPrimebotSettings Settings;
     void FindPrime(decltype(tp)& pool, unique_mpz&& workitem);
     void FoundPrime(decltype(tp)& pool, unique_mpz&& result);
 public:
     Primebot() = delete;
-    Primebot(unsigned int ThreadCount, NetworkController* NetController);
+    Primebot(AllPrimebotSettings config, NetworkController* NetController);
     ~Primebot();
+
+    static unique_mpz GenerateRandomOdd(unsigned int Bits, unsigned int Seed);
+
     void Start();
     void Stop();
 };

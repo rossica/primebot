@@ -1,46 +1,44 @@
 #include <iostream>
 #include "prime.h"
-#include "PrimeTest.h"
 #include "networkcontroller.h"
-#include "asyncPrimeSearching.h"
+//#include "asyncPrimeSearching.h" // uncommenting this opens the gates to template error hell.
 #pragma warning( push )
+#pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
-#include "gmpxx.h"
+//#include "gmpxx.h" // uncommenting this also adds errors
 #pragma warning( pop )
+
 
 // Yeah this is kind of ugly, Old-C style.
 // Feel free to send a PR with a better way to do this.
 // Maybe a Generator?
-//static gmp_randstate_t Rand;
-//static bool InitializedRand = false;
-//static unsigned int LastSeed = 0;
-
-unique_mpz GenerateRandomOdd(unsigned int Bits/* = 512*/, unsigned int Seed)// = LastSeed)
+unique_mpz Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
 {
-    //if (!InitializedRand)
-    //{
-    //    gmp_randinit_mt(Rand);
-    //}
+    static gmp_randstate_t Rand = { 0 };
+    static unsigned int LastSeed = 0;
+    if (Rand[0]._mp_algdata._mp_lc == nullptr) // does this even work?
+    {
+        gmp_randinit_mt(Rand);
+    }
 
-    //if (LastSeed != Seed)
-    //{
-    //    gmp_randseed_ui(Rand, Seed);
-    //    LastSeed = Seed;
-    //}
+    if (LastSeed != Seed)
+    {
+        gmp_randseed_ui(Rand, Seed);
+        LastSeed = Seed;
+    }
 
     unique_mpz Work(new __mpz_struct);
     //mpz_init_set_ui(Work.get(), 1);
-    mpz_init_set_ui(Work.get(), 1);
-    //mpz_urandomb(Work.get(), Rand, Bits);
+    mpz_init(Work.get());
+    mpz_urandomb(Work.get(), Rand, Bits);
 
-    //if (mpz_even_p(Work.get()))
-    //{
-    //    mpz_add_ui(Work.get(), Work.get(), 1);
-    //}
+    if (mpz_even_p(Work.get()))
+    {
+        mpz_add_ui(Work.get(), Work.get(), 1);
+    }
 
     return std::move(Work);
 }
-
 
 void Primebot::FindPrime(decltype(tp)& pool, unique_mpz&& workitem)
 {
@@ -76,6 +74,7 @@ void Primebot::FoundPrime(decltype(tp)& pool, unique_mpz&& result)
     }
     else
     {
+        // Todo: write out to disk here if file path present
         gmp_printf("%Zd\n", result.get());
     }
 
@@ -83,9 +82,10 @@ void Primebot::FoundPrime(decltype(tp)& pool, unique_mpz&& result)
     pool.EnqueueWorkItem(std::move(result));
 }
 
-Primebot::Primebot(unsigned int ThreadCount, NetworkController* NetController) :
+Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
+    Settings(Config),
     Controller(NetController),
-    tp(ThreadCount,
+    tp(Config.PrimeSettings.ThreadCount,
         std::bind(&Primebot::FindPrime, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Primebot::FoundPrime, this, std::placeholders::_1, std::placeholders::_2))
 {
@@ -117,29 +117,34 @@ void Primebot::Start()
     }
     else
     {
-        // generate a large, random, odd number
-        // and assign it to Start;
+        Start = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
     }
 
-    for (unsigned int i = 1; i <= tp.GetThreadCount(); i++)
+    if (Settings.PrimeSettings.UseAsync)
     {
-        unique_mpz work(new __mpz_struct);
-        // ((2 * i) + Start)
-        mpz_init_set(work.get(), Start.get());
-        mpz_add_ui(work.get(), work.get(), (2 * i));
-        tp.EnqueueWorkItem(std::move(work));
+        // Async implementation
+        // Commented out because of template-hell
+        //mpz_class foo(Start.get());
+        //mpz_class bar(Start.get());
+        //bar += 10000000;
+        //auto Results = findPrimes(foo, bar);
+
+        //for (auto res : Results)
+        //{
+        //    Controller->ReportWork(*res.get_mpz_t());
+        //}
     }
-
-    // Async implementation
-    //mpz_class foo(Start.get());
-    //mpz_class bar(Start.get());
-    //bar += 10000000;
-    //auto Results = findPrimes(foo, bar);
-
-    //for (auto res : Results)
-    //{
-    //    Controller->ReportWork(*res.get_mpz_t());
-    //}
+    else
+    {
+        for (unsigned int i = 1; i <= tp.GetThreadCount(); i++)
+        {
+            unique_mpz work(new __mpz_struct);
+            // ((2 * i) + Start)
+            mpz_init_set(work.get(), Start.get());
+            mpz_add_ui(work.get(), work.get(), (2 * i));
+            tp.EnqueueWorkItem(std::move(work));
+        }
+    }
 }
 
 void Primebot::Stop()
