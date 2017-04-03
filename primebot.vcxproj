@@ -119,6 +119,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="commandparser.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="networkcontroller.cpp" />
     <ClCompile Include="prime.cpp" />
@@ -126,6 +127,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="asyncPrimeSearching.h" />
+    <ClInclude Include="commandparser.h" />
     <ClInclude Include="networkcontroller.h" />
     <ClInclude Include="onelockthreadpool.h" />
     <ClInclude Include="pal.h" />
