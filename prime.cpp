@@ -1,14 +1,45 @@
+#include <iostream>
 #include "prime.h"
 #include "PrimeTest.h"
 #include "networkcontroller.h"
 #include "asyncPrimeSearching.h"
 #pragma warning( push )
-#pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
-#include "gmp.h"
 #include "gmpxx.h"
 #pragma warning( pop )
-#include <iostream>
+
+// Yeah this is kind of ugly, Old-C style.
+// Feel free to send a PR with a better way to do this.
+// Maybe a Generator?
+//static gmp_randstate_t Rand;
+//static bool InitializedRand = false;
+//static unsigned int LastSeed = 0;
+
+unique_mpz GenerateRandomOdd(unsigned int Bits/* = 512*/, unsigned int Seed)// = LastSeed)
+{
+    //if (!InitializedRand)
+    //{
+    //    gmp_randinit_mt(Rand);
+    //}
+
+    //if (LastSeed != Seed)
+    //{
+    //    gmp_randseed_ui(Rand, Seed);
+    //    LastSeed = Seed;
+    //}
+
+    unique_mpz Work(new __mpz_struct);
+    //mpz_init_set_ui(Work.get(), 1);
+    mpz_init_set_ui(Work.get(), 1);
+    //mpz_urandomb(Work.get(), Rand, Bits);
+
+    //if (mpz_even_p(Work.get()))
+    //{
+    //    mpz_add_ui(Work.get(), Work.get(), 1);
+    //}
+
+    return std::move(Work);
+}
 
 
 void Primebot::FindPrime(decltype(tp)& pool, unique_mpz&& workitem)
@@ -101,8 +132,9 @@ void Primebot::Start()
 
     // Async implementation
     //mpz_class foo(Start.get());
-    //mpz_class total(10000);
-    //auto Results = findPrimes(foo, total);
+    //mpz_class bar(Start.get());
+    //bar += 10000000;
+    //auto Results = findPrimes(foo, bar);
 
     //for (auto res : Results)
     //{

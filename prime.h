@@ -5,6 +5,7 @@
 #include "gmp.h"
 #pragma warning( pop )
 #include "threadpool.h"
+//#include "commandparser.h"
 
 
 struct FreeMpz
@@ -17,6 +18,8 @@ struct FreeMpz
 };
 using unique_mpz = std::unique_ptr<__mpz_struct,FreeMpz>;
 
+unique_mpz GenerateRandomOdd(unsigned int Bits, unsigned int Seed);
+
 // Forward Declarations
 class NetworkController;
 
@@ -25,6 +28,7 @@ class Primebot
 private:
     NetworkController* Controller;
     Threadpool<unique_mpz> tp;
+    //AllPrimebotSettings Settings;
     void FindPrime(decltype(tp)& pool, unique_mpz&& workitem);
     void FoundPrime(decltype(tp)& pool, unique_mpz&& result);
 public:

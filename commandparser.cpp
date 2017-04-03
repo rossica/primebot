@@ -21,13 +21,13 @@ void CommandParser::PrintHelp()
     std::cout << std::endl;
 }
 
-bool CommandParser::ConfigureServer(AllSettings& Settings)
+bool CommandParser::ConfigureServer(AllPrimebotSettings& Settings)
 {
     Settings.NetworkSettings.Server = true;
     return true;
 }
 
-bool CommandParser::ConfigureClient(AllSettings& Settings, std::string Address)
+bool CommandParser::ConfigureClient(AllPrimebotSettings& Settings, std::string Address)
 {
     addrinfo Hints = { 0 };
     addrinfo* Results;
@@ -75,13 +75,13 @@ bool CommandParser::ConfigureClient(AllSettings& Settings, std::string Address)
     return true;
 }
 
-bool CommandParser::ConfigureAsync(AllSettings& Settings)
+bool CommandParser::ConfigureAsync(AllPrimebotSettings& Settings)
 {
     Settings.PrimeSettings.UseAsync = true;
     return true;
 }
 
-bool CommandParser::ConfigureThreads(AllSettings& Settings, std::string Threads)
+bool CommandParser::ConfigureThreads(AllPrimebotSettings& Settings, std::string Threads)
 {
     try
     {
@@ -95,13 +95,13 @@ bool CommandParser::ConfigureThreads(AllSettings& Settings, std::string Threads)
     return true;
 }
 
-bool CommandParser::ConfigurePath(AllSettings& Settings, std::string Path)
+bool CommandParser::ConfigurePath(AllPrimebotSettings& Settings, std::string Path)
 {
     Settings.FileSettings.Path = Path;
     return true;
 }
 
-bool CommandParser::ConfigureSeed(AllSettings& Settings, std::string Seed)
+bool CommandParser::ConfigureSeed(AllPrimebotSettings& Settings, std::string Seed)
 {
     try
     {
@@ -115,7 +115,7 @@ bool CommandParser::ConfigureSeed(AllSettings& Settings, std::string Seed)
     return true;
 }
 
-bool CommandParser::ConfigureBits(AllSettings& Settings, std::string Bits)
+bool CommandParser::ConfigureBits(AllPrimebotSettings& Settings, std::string Bits)
 {
     try
     {
@@ -135,9 +135,9 @@ CommandParser::CommandParser(int argc, char ** argv) :
 {
 }
 
-AllSettings CommandParser::ParseArguments()
+AllPrimebotSettings CommandParser::ParseArguments()
 {
-    AllSettings Settings;
+    AllPrimebotSettings Settings;
 
     for (int i = 0; i < ArgCount; i++)
     {
@@ -204,7 +204,7 @@ AllSettings CommandParser::ParseArguments()
     return Settings;
 }
 
-PrimebotSettings::PrimebotSettings() :
+PrimeSettings::PrimeSettings() :
     UseAsync(false),
     ThreadCount(std::thread::hardware_concurrency()),
     Bitsize(256),

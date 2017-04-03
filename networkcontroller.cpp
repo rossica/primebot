@@ -1,4 +1,5 @@
 #include "networkcontroller.h"
+#include "pal.h"
 #include <future>
 #include <iostream>
 
@@ -448,7 +449,7 @@ NETSOCK NetworkController::GetSocketToServer()
     return GetSocketTo(Settings.NetworkSettings.IPv6);
 }
 
-NetworkController::NetworkController(AllSettings Config) :
+NetworkController::NetworkController(AllPrimebotSettings Config) :
     Settings(Config),
     tp(
         2 * std::thread::hardware_concurrency(),

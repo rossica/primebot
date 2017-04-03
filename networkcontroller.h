@@ -1,22 +1,28 @@
 #pragma once
 
+#if defined(_WIN32) || defined(_WIN64)
+#include <winsock2.h>
+typedef int socklen_t;
+typedef SOCKET NETSOCK;
+#elif defined __linux__
+#include <string.h>
+#include <sys/types.h>
+#include <netinet/ip.h>
+#include <unistd.h>
+#include <netdb.h>
+typedef int NETSOCK;
+#define INVALID_SOCKET (-1)
+#endif
+
 #include <memory>
 #include <set>
 #include <list>
 #include "threadpool.h"
 #include "prime.h"
-
-#pragma warning( push )
-#pragma warning( disable: 4146 )
-#pragma warning( disable: 4800 )
-#include "gmp.h"
-#pragma warning( pop )
-
-#include "pal.h"
 #include "commandparser.h"
 
 // Forward Declarations
-class Primebot;
+//class Primebot;
 
 struct NetworkConnectionInfo
 {
@@ -101,7 +107,7 @@ inline bool operator<(const AddressType& Left, const AddressType& Right)
 class NetworkController
 {
 private:
-    AllSettings Settings;
+    AllPrimebotSettings Settings;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> tp;
     std::set<AddressType> Clients;
     NETSOCK ListenSocket;
@@ -126,7 +132,7 @@ private:
     NETSOCK GetSocketToServer();
 public:
     NetworkController() = delete;
-    NetworkController(AllSettings Config);
+    NetworkController(AllPrimebotSettings Config);
     ~NetworkController();
     void Start();
 

@@ -1,5 +1,13 @@
 #pragma once
-#include "pal.h"
+
+#if defined(_WIN32) || defined(_WIN64)
+#include <winsock2.h>
+#include <ws2ipdef.h>
+#elif defined __linux__
+#include <sys/types.h>
+#include <netinet/ip.h>
+#endif
+
 #include <string>
 
 #define SERVER_PORT (htons(60000))
@@ -23,7 +31,7 @@ struct NetworkControllerSettings
     {}
 };
 
-struct PrimebotSettings
+struct PrimeSettings
 {
     // Use Async prime finding code instead of threadpool
     bool UseAsync;
@@ -34,7 +42,7 @@ struct PrimebotSettings
     // Optional seed for the RNG to generate numbers to search
     unsigned int RngSeed;
 
-    PrimebotSettings();
+    PrimeSettings();
 };
 
 struct PrimeFileSettings
@@ -44,13 +52,13 @@ struct PrimeFileSettings
     std::string Path;
 };
 
-struct AllSettings
+struct AllPrimebotSettings
 {
     NetworkControllerSettings NetworkSettings;
-    PrimebotSettings PrimeSettings;
+    PrimeSettings PrimeSettings;
     PrimeFileSettings FileSettings;
 
-    AllSettings() :
+    AllPrimebotSettings() :
         NetworkSettings(),
         PrimeSettings(),
         FileSettings()
@@ -64,14 +72,14 @@ private:
     char** Args;
 
     void PrintHelp();
-    bool ConfigureServer(AllSettings& Settings);
-    bool ConfigureClient(AllSettings& Settings, std::string Address);
-    bool ConfigureAsync(AllSettings& Settings);
-    bool ConfigureThreads(AllSettings& Settings, std::string Threads);
-    bool ConfigurePath(AllSettings& Settings, std::string Path);
-    bool ConfigureSeed(AllSettings& Settings, std::string Seed);
-    bool ConfigureBits(AllSettings& Settings, std::string Bits);
+    bool ConfigureServer(AllPrimebotSettings& Settings);
+    bool ConfigureClient(AllPrimebotSettings& Settings, std::string Address);
+    bool ConfigureAsync(AllPrimebotSettings& Settings);
+    bool ConfigureThreads(AllPrimebotSettings& Settings, std::string Threads);
+    bool ConfigurePath(AllPrimebotSettings& Settings, std::string Path);
+    bool ConfigureSeed(AllPrimebotSettings& Settings, std::string Seed);
+    bool ConfigureBits(AllPrimebotSettings& Settings, std::string Bits);
 public:
     CommandParser(int argc, char** argv);
-    AllSettings ParseArguments();
+    AllPrimebotSettings ParseArguments();
 };

@@ -63,39 +63,47 @@ int main(int argc, char** argv)
     return 0;
     */
 
+    //AllPrimebotSettings Settings;
+    //CommandParser Parse(argc, argv);
+
+    //Settings = Parse.ParseArguments();
+
+
 
     if (argc > 1 && strcmp(argv[1], "-c") == 0)
     {
         // client code
-        AllSettings Settings;
-        Settings.NetworkSettings.IPv4.sin_family = AF_INET;
-        Settings.NetworkSettings.IPv4.sin_addr = in4addr_loopback;
-        Settings.NetworkSettings.IPv4.sin_port = htons(60000);
-        Settings.NetworkSettings.Server = false;
+        //AllPrimebotSettings Settings;
+        //Settings.NetworkSettings.IPv4.sin_family = AF_INET;
+        //Settings.NetworkSettings.IPv4.sin_addr = in4addr_loopback;
+        //Settings.NetworkSettings.IPv4.sin_port = htons(60000);
+        //Settings.NetworkSettings.Server = false;
 
-        NetworkController netcon(Settings);
+        //NetworkController netcon(Settings);
 
-        Primebot pb(std::thread::hardware_concurrency(), &netcon);
-        netcon.SetPrimebot(&pb);
 
-        pb.Start();
+        //Primebot pb(Settings, &netcon);
+        //netcon.SetPrimebot(&pb);
 
-        int dummy = 0;
-        std::cout << "Type anything and press enter to exit.";
-        std::cin >> dummy;
+        //pb.Start();
 
-        pb.Stop();
+        //int dummy = 0;
+        //std::cout << "Type anything and press enter to exit.";
+        //std::cin >> dummy;
+
+        //pb.Stop();
     }
     else if (argc > 1 && strcmp(argv[1], "-s") == 0)
     {
         // server
-        AllSettings Settings;
-        Settings.NetworkSettings.IPv4.sin_family = AF_INET;
-        Settings.NetworkSettings.IPv4.sin_addr= in4addr_loopback;
-        Settings.NetworkSettings.Server = true;
+        //AllPrimebotSettings Settings;
+        //Settings.NetworkSettings.IPv4.sin_family = AF_INET;
+        //Settings.NetworkSettings.IPv4.sin_addr = in4addr_loopback;
+        //Settings.NetworkSettings.Server = true;
 
-        NetworkController netsrv(Settings);
-        netsrv.Start();
+        //NetworkController netsrv(Settings);
+        //netsrv.Start();
+
     }
 
     return 0;
