@@ -71,5 +71,8 @@ bool isLikelyPrime(int workitem) {
 }
 
 bool isLikelyPrime(mpz_class workitem) {
-	return mpz_probab_prime_p(workitem.get_mpz_t(), 25) > 1;
+	return mpz_probab_prime_p(
+        workitem.get_mpz_t(), 
+        25
+    );
 }
