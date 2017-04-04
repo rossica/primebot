@@ -4,6 +4,7 @@
 #pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
 #include "gmp.h"
+//#include "gmpxx.h" // uncomment when you figure out who is including windows.h without NOMINMAX
 #pragma warning( pop )
 #include "threadpool.h"
 
@@ -17,7 +18,7 @@ struct FreeMpz
         delete ptr;
     }
 };
-using unique_mpz = std::unique_ptr<__mpz_struct,FreeMpz>;
+using unique_mpz = std::unique_ptr<__mpz_struct, FreeMpz>;
 
 
 

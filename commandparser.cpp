@@ -1,7 +1,10 @@
 #include "commandparser.h"
-#include "pal.h"
 #include <thread>
 #include <iostream>
+
+#if defined(_WIN32) || defined(_WIN64)
+#include <WS2tcpip.h>
+#endif
 
 #define CompareArg(Arg, Val) (std::string(Arg) == Val)
 #define CheckIndexValid(idx, arg) if(idx >= ArgCount) { std::cout << "Invalid end of Argument: " << arg << std::endl; break; }

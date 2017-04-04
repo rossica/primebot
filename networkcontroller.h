@@ -1,6 +1,7 @@
 #pragma once
 
 #if defined(_WIN32) || defined(_WIN64)
+#define NOMINMAX
 #include <winsock2.h>
 typedef SOCKET NETSOCK;
 #elif defined __linux__
@@ -53,8 +54,10 @@ enum NetworkMessageType
     WorkItem, // binary representation of workitem
     ReportWork, // size of workitem, binary representation of workitem
     WorkAccepted, // 0 size, no message
+    BatchReportWork, // count of (size,workitem) pairs
+    BatchWorkAccepted, // 0 size, no message
     UnregisterClient, // 0 size, sent by client during shutdown
-    ShutdownClient // 0 size, can be server initiated message
+    ShutdownClient // 0 size, server initiated message
 };
 
 union AddressType
@@ -106,6 +109,7 @@ private:
     void HandleRegisterClient(NetworkConnectionInfo& ClientSock);
     void HandleRequestWork(NetworkConnectionInfo& ClientSock);
     void HandleReportWork(NetworkConnectionInfo& ClientSock, int Size);
+    void HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count);
     void HandleUnregisterClient(NetworkConnectionInfo& ClientSock);
     void HandleShutdownClient(NetworkConnectionInfo& ServerSock);
 
@@ -128,6 +132,7 @@ public:
     bool RegisterClient();
     unique_mpz RequestWork();
     bool ReportWork(__mpz_struct& WorkItem);
+    bool BatchReportWork(std::iterator<std::_General_ptr_iterator_tag, unique_mpz> it);
     void UnregisterClient();
     void ShutdownClients();
 };

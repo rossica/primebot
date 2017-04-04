@@ -3,7 +3,7 @@
 #include <string>
 
 #if defined(_WIN32) || defined(_WIN64)
-#define NOMINMAX
+#define NOMINMAX // windows.h provides MIN/MAX macros that conflict with min()/max() in gmpxx.h
 #include <winsock2.h>
 #include <ws2ipdef.h>
 #elif defined __linux__
