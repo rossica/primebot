@@ -2,7 +2,6 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <winsock2.h>
-typedef int socklen_t;
 typedef SOCKET NETSOCK;
 #elif defined __linux__
 #include <sys/types.h>

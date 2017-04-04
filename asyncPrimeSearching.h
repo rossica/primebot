@@ -20,6 +20,7 @@
 #include "PrimeTest.h"
 
 template<typename T>
+inline
 std::vector<T> concatenate(std::vector<T> first, std::vector<T> second) {
     first.insert(std::end(first), 
         std::make_move_iterator(std::begin(second)), 
@@ -30,6 +31,7 @@ std::vector<T> concatenate(std::vector<T> first, std::vector<T> second) {
 
 //Takes elements [x1, x2, x3, x4] to [g(x1, x2), g(x2, x3), g(x3, x4)]
 template<typename T, typename G>
+inline
 auto applyPairwise(G g, std::vector<T> elements) {
     std::vector<decltype(g(elements[0], elements[0]))> results;
     for (int i = 0; i != (elements.size()-1); i++) {
@@ -39,6 +41,7 @@ auto applyPairwise(G g, std::vector<T> elements) {
 }
 
 template<typename T>
+inline
 std::vector<T> partitionBorders(int numberOfPartitions, T start, T finish) {
     std::vector<T> results;
     T total = finish - start;
@@ -50,6 +53,7 @@ std::vector<T> partitionBorders(int numberOfPartitions, T start, T finish) {
 }
 
 template<typename T, typename Unaryop>
+inline
 auto map(Unaryop op, std::vector<T> in){
     std::vector<decltype(op(std::move(in[0])))> results;
     for (int i = 0; i != in.size(); i++)
@@ -58,11 +62,13 @@ auto map(Unaryop op, std::vector<T> in){
 }
 
 template<typename T, typename S, typename BinaryOp>
+inline
 auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
     return std::accumulate(std::begin(factors), std::end(factors), init, op);
 }
 
 template<typename T>
+inline
 std::vector<T> primesInRange(T start, T finish) {
     std::vector<T> primes;
     if (start % 2 == 0) start++;
@@ -75,6 +81,7 @@ std::vector<T> primesInRange(T start, T finish) {
 }
 
 template<typename T>
+inline
 std::vector<T> findPrimes(T start, T finish) {
     int threadTotal = std::thread::hardware_concurrency();
     if (threadTotal == 0) return std::vector<T>{};

@@ -30,6 +30,9 @@
     <ClCompile Include="commandparser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="pal-windows.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pal.h">

@@ -2,11 +2,12 @@
 
 // Cross-platform development, here we come...
 #if defined(_WIN32) || defined(_WIN64)
+#define NOMINMAX
 #include <winsock2.h>
 #include <ws2ipdef.h>
 #include <WS2tcpip.h>
 #define s_addr S_un.S_addr
-#define socklen_t int
+typedef int socklen_t;
 typedef SOCKET NETSOCK;
 inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
 #elif defined __linux__
@@ -25,3 +26,5 @@ typedef int NETSOCK;
 inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 #define memcpy_s(dest, destsz, src, srcsz) memcpy(dest, src, destsz)
 #endif
+
+bool RegisterSignalHandler();

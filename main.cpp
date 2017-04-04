@@ -7,6 +7,13 @@
 #include "asyncPrimeSearching.h"
 #include "networkcontroller.h"
 #include "commandparser.h"
+#include "pal.h"
+
+// Global program state
+// (Currently used for signal handlers
+AllPrimebotSettings ProgramSettings;
+NetworkController* Controller = nullptr;
+Primebot* Bot = nullptr;
 
 
 int main(int argc, char** argv)
@@ -24,27 +31,33 @@ int main(int argc, char** argv)
     return 0;
     */
 
-    AllPrimebotSettings Settings;
     CommandParser Parse(argc, argv);
 
-    Settings = Parse.ParseArguments();
+    ProgramSettings = Parse.ParseArguments();
 
-    if (!Settings.Run)
+    if (!ProgramSettings.Run)
     {
-        return 0;
+        return EXIT_FAILURE;
     }
 
-    if (Settings.NetworkSettings.Server)
+    if (!RegisterSignalHandler())
+    {
+        return EXIT_FAILURE;
+    }
+
+    if (ProgramSettings.NetworkSettings.Server)
     {
         // Configure for Server
-        NetworkController netsrv(Settings);
+        NetworkController netsrv(ProgramSettings);
+        Controller = &netsrv;
         netsrv.Start();
     }
-    else if(Settings.NetworkSettings.Client)
+    else if(ProgramSettings.NetworkSettings.Client)
     {
         // Configure for client
-        NetworkController netcon(Settings);
-        Primebot pb(Settings, &netcon);
+        NetworkController netcon(ProgramSettings);
+        Primebot pb(ProgramSettings, &netcon);
+        Bot = &pb;
         netcon.SetPrimebot(&pb);
 
         pb.Start();
@@ -58,7 +71,8 @@ int main(int argc, char** argv)
     else
     {
         // Configure standalone
-        Primebot pb(Settings, nullptr);
+        Primebot pb(ProgramSettings, nullptr);
+        Bot = &pb;
 
         pb.Start();
 
@@ -69,5 +83,5 @@ int main(int argc, char** argv)
         pb.Stop();
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }

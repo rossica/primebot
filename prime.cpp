@@ -123,15 +123,25 @@ void Primebot::Start()
     if (Settings.PrimeSettings.UseAsync)
     {
         // Async implementation
-      
-        mpz_class foo(Start.get());
-        mpz_class bar(foo);
-        bar += 1000;
-        auto Results = findPrimes(foo, bar);
+        mpz_class AsyncStart(Start.get());
+        mpz_class AsyncEnd(AsyncStart);
+        AsyncEnd += std::thread::hardware_concurrency() * 1000;
+        auto Results = findPrimes(AsyncStart, AsyncEnd);
 
-        for (auto res : Results)
+        // Use network to report results
+        if (Controller != nullptr)
         {
-            Controller->ReportWork(*res.get_mpz_t());
+            for (auto res : Results)
+            {
+                Controller->ReportWork(*res.get_mpz_t());
+            }
+        }
+        else // print results to console
+        {
+            for (auto res : Results)
+            {
+                gmp_printf("%Zd\n", res.get_mpz_t());
+            }
         }
     }
     else

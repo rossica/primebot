@@ -95,6 +95,22 @@ void NetworkController::HandleRegisterClient(NetworkConnectionInfo& ClientSock)
 {
     // This should also copy the IPv4 data if it's only IPv4.
     Clients.insert(ClientSock.IPv6);
+
+    std::cout << "Registered client: ";
+    if (ClientSock.IPv4.sin_family == AF_INET)
+    {
+        std::cout << std::hex << ntohl(ClientSock.IPv4.sin_addr.s_addr);
+    }
+    else
+    {
+        for (unsigned char* idx = std::begin(ClientSock.IPv6.sin6_addr.u.Byte);
+            idx < std::end(ClientSock.IPv6.sin6_addr.u.Byte);
+            idx++)
+        {
+            std::cout << std::hex << idx;
+        }
+    }
+    std::cout << std::endl;
 }
 
 unique_mpz NetworkController::RequestWork()
@@ -264,16 +280,22 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
 
     } while (IsSocketValid(Result) && Result > 0 && ReceivedData < Size);
 
-    // TODO
-    // open a file handle of the path:
-    // c:\path\passed\in\<ipaddress>\<power-of-2>.txt
-    // write Data to file
 
-    unique_mpz Work(new __mpz_struct);
-    mpz_init_set_str(Work.get(), Data.get(), STRING_BASE);
+    if (!Settings.FileSettings.Path.empty())
+    {
+        // TODO
+        // open a file handle of the path:
+        // c:\path\passed\in\<ipaddress>\<power-of-2>.txt
+        // write Data to file
+    }
+    else
+    {
+        unique_mpz Work(new __mpz_struct);
+        mpz_init_set_str(Work.get(), Data.get(), STRING_BASE);
 
-    //std::cout << mpz_get_ui(Work.get()) << std::endl;
-    gmp_printf("%Zd\n", Work.get());
+        //std::cout << mpz_get_ui(Work.get()) << std::endl;
+        gmp_printf("%Zd\n", Work.get());
+    }
 }
 
 void NetworkController::UnregisterClient()
@@ -295,6 +317,22 @@ void NetworkController::HandleUnregisterClient(NetworkConnectionInfo& ClientSock
     Header.Type = NetworkMessageType::ShutdownClient;
 
     send(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0);
+
+    std::cout << "Unregistered client: ";
+    if (ClientSock.IPv4.sin_family == AF_INET)
+    {
+        std::cout << std::hex << ntohl(ClientSock.IPv4.sin_addr.s_addr);
+    }
+    else
+    {
+        for (unsigned char* idx = std::begin(ClientSock.IPv6.sin6_addr.u.Byte);
+            idx < std::end(ClientSock.IPv6.sin6_addr.u.Byte);
+            idx++)
+        {
+            std::cout << std::hex << idx;
+        }
+    }
+    std::cout << std::endl;
 }
 
 void NetworkController::ShutdownClients()
@@ -304,6 +342,16 @@ void NetworkController::ShutdownClients()
     // for each client
     for (AddressType client : Clients)
     {
+        // add back the client's port
+        if (client.IPv4.sin_family == AF_INET)
+        {
+            client.IPv4.sin_port = CLIENT_PORT;
+        }
+        else
+        {
+            client.IPv6.sin6_port = CLIENT_PORT;
+        }
+
         // open a socket to the client
         NETSOCK Socket = GetSocketTo(client.IPv6);
 
@@ -316,7 +364,8 @@ void NetworkController::ShutdownClients()
 
 void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
 {
-    if (memcmp(&Settings.NetworkSettings.IPv6, &ServerSock.IPv6, sizeof(Settings.NetworkSettings.IPv6)) == 0)
+    if ((ServerSock.IPv4.sin_family == AF_INET) && (Settings.NetworkSettings.IPv4.sin_addr.s_addr == ServerSock.IPv4.sin_addr.s_addr) ||
+        (ServerSock.IPv6.sin6_family == AF_INET6) && (memcmp(&Settings.NetworkSettings.IPv6, &ServerSock.IPv6, sizeof(Settings.NetworkSettings.IPv6)) == 0))
     {
         Bot->Stop();
     }
