@@ -2,11 +2,11 @@
 #include <string>
 #include <memory>
 
-#include "prime.h"
 //#include "onelockthreadpool.h"
 #include "asyncPrimeSearching.h"
 #include "networkcontroller.h"
 #include "commandparser.h"
+#include "prime.h"
 #include "pal.h"
 
 // Global program state

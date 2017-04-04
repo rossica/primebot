@@ -1,5 +1,30 @@
 #include "networkcontroller.h"
-#include "pal.h"
+// Cross-platform development, here we come...
+#if defined(_WIN32) || defined(_WIN64)
+#define NOMINMAX
+#include <winsock2.h>
+#include <ws2ipdef.h>
+#include <WS2tcpip.h>
+#define s_addr S_un.S_addr
+typedef int socklen_t;
+typedef SOCKET NETSOCK;
+inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
+#elif defined __linux__
+#define __STDC_WANT_LIB_EXT1__ 1
+#include <string.h>
+#include <cstring>
+#include <sys/types.h>
+#include <netinet/ip.h>
+#include <unistd.h>
+#include <netdb.h>
+typedef int NETSOCK;
+#define INVALID_SOCKET (-1)
+#define SD_BOTH SHUT_RDWR
+#define SD_SEND SHUT_WR
+#define closesocket close
+inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
+#define memcpy_s(dest, destsz, src, srcsz) memcpy(dest, src, destsz)
+#endif
 #include <future>
 #include <iostream>
 
@@ -45,6 +70,12 @@ void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo 
         if (Clients.find(ClientSock.IPv6) != Clients.end())
         {
             HandleReportWork(ClientSock, Header.Size);
+        }
+        break;
+    case NetworkMessageType::BatchReportWork:
+        if (Clients.find(ClientSock.IPv6) != Clients.end())
+        {
+            HandleBatchReportWork(ClientSock, Header.Size);
         }
         break;
     case NetworkMessageType::UnregisterClient:
@@ -295,6 +326,30 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
 
         //std::cout << mpz_get_ui(Work.get()) << std::endl;
         gmp_printf("%Zd\n", Work.get());
+    }
+}
+
+bool NetworkController::BatchReportWork(std::iterator<std::_General_ptr_iterator_tag, unique_mpz> it)
+{
+    // TODO
+    return false;
+}
+
+void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count)
+{
+    NETSOCK Result;
+    int Size;
+
+    for (int i = 0; i < Count; i++)
+    {
+        Result = recv(ClientSock.ClientSocket, (char*)&Size, sizeof(Size), 0);
+        if (!IsSocketValid(Result))
+        {
+            ReportError(" recv size");
+            return;
+        }
+
+        HandleReportWork(ClientSock, ntohl(Size));
     }
 }
 
