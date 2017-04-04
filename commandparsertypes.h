@@ -3,6 +3,7 @@
 #include <string>
 
 #if defined(_WIN32) || defined(_WIN64)
+#define NOMINMAX
 #include <winsock2.h>
 #include <ws2ipdef.h>
 #elif defined __linux__
