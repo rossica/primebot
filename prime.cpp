@@ -2,11 +2,6 @@
 #include "prime.h"
 #include "networkcontroller.h"
 #include "asyncPrimeSearching.h" 
-#pragma warning( push )
-#pragma warning( disable: 4146 )
-#pragma warning( disable: 4800 )
-#include "gmpxx.h" 
-#pragma warning( pop )
 
 
 // Yeah this is kind of ugly, Old-C style.
@@ -123,9 +118,18 @@ void Primebot::Start()
     if (Settings.PrimeSettings.UseAsync)
     {
         // Async implementation
-        mpz_class AsyncStart(Start.get());
-        mpz_class AsyncEnd(AsyncStart);
-        AsyncEnd += std::thread::hardware_concurrency() * 1000;
+        
+        char * tmp = mpz_get_str(NULL, 10, Start.get());
+        std::string AsyncStart = tmp;
+
+        // In order to free the memory we need to get the right free function:
+        void(*freefunc)(void *, size_t);
+        mp_get_memory_functions(NULL, NULL, &freefunc);
+        freefunc(tmp, std::strlen(tmp) + 1);
+        
+
+        std::string AsyncEnd(AsyncStart);
+        AsyncEnd = multiprecision_add( AsyncEnd, std::to_string(std::thread::hardware_concurrency()) + "000");
         auto Results = findPrimes(AsyncStart, AsyncEnd);
 
         // Use network to report results
@@ -133,14 +137,14 @@ void Primebot::Start()
         {
             for (auto res : Results)
             {
-                Controller->ReportWork(*res.get_mpz_t());
+                //Controller->ReportWork(*res.get_mpz_t());
             }
         }
         else // print results to console
         {
             for (auto res : Results)
             {
-                gmp_printf("%Zd\n", res.get_mpz_t());
+                std::cout << res << std::endl << std::endl;
             }
         }
     }

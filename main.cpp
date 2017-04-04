@@ -4,7 +4,6 @@
 
 #include "prime.h"
 //#include "onelockthreadpool.h"
-#include "asyncPrimeSearching.h"
 #include "networkcontroller.h"
 #include "commandparser.h"
 #include "pal.h"
@@ -18,18 +17,6 @@ Primebot* Bot = nullptr;
 
 int main(int argc, char** argv)
 {
-
-    /*
-    mpz_class a = 3;
-    mpz_class b = 5000;
-    auto primes = findPrimes(a, b);
-    for (auto v : primes)
-        std::cout << v.get_str() << std::endl; //TODO: strange bug isn't linking operator<< properly.
-
-    int dummy = 0;
-    std::cin >> dummy;
-    return 0;
-    */
 
     CommandParser Parse(argc, argv);
 
