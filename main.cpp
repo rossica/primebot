@@ -4,7 +4,7 @@
 
 #include "prime.h"
 //#include "onelockthreadpool.h"
-//#include "asyncPrimeSearching.h"
+#include "asyncPrimeSearching.h"
 #include "networkcontroller.h"
 #include "commandparser.h"
 

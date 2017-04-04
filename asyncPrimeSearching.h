@@ -19,23 +19,6 @@
 
 #include "PrimeTest.h"
 
-template<typename INTEGER>
-INTEGER odd(INTEGER in) {
-    return (2*in) + 1;
-}
-
-//start maps to odd numbers, so start = 1 maps to 2*1 + 1 = 3.
-template<typename T>
-std::vector<T> primesInRange(T start, T finish) {
-    std::vector<T> primes;
-    for (T primeCandidate = odd(start); primeCandidate != odd(finish); primeCandidate = primeCandidate + 2) {
-        if (isLikelyPrime(primeCandidate)) {
-            primes.push_back(primeCandidate);
-        }
-    }
-    return primes;
-}
-
 template<typename T>
 std::vector<T> concatenate(std::vector<T> first, std::vector<T> second) {
     first.insert(std::end(first), 
@@ -77,6 +60,18 @@ auto map(Unaryop op, std::vector<T> in){
 template<typename T, typename S, typename BinaryOp>
 auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
     return std::accumulate(std::begin(factors), std::end(factors), init, op);
+}
+
+template<typename T>
+std::vector<T> primesInRange(T start, T finish) {
+    std::vector<T> primes;
+    if (start % 2 == 0) start++;
+    for (T primeCandidate = start; primeCandidate < finish; primeCandidate = primeCandidate + 2) {
+        if (isLikelyPrime(primeCandidate)) {
+            primes.push_back(primeCandidate);
+        }
+    }
+    return primes;
 }
 
 template<typename T>

@@ -1,11 +1,11 @@
 #include <iostream>
 #include "prime.h"
 #include "networkcontroller.h"
-//#include "asyncPrimeSearching.h" // uncommenting this opens the gates to template error hell.
+#include "asyncPrimeSearching.h" 
 #pragma warning( push )
 #pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
-//#include "gmpxx.h" // uncommenting this also adds errors
+#include "gmpxx.h" 
 #pragma warning( pop )
 
 
@@ -123,16 +123,16 @@ void Primebot::Start()
     if (Settings.PrimeSettings.UseAsync)
     {
         // Async implementation
-        // Commented out because of template-hell
-        //mpz_class foo(Start.get());
-        //mpz_class bar(Start.get());
-        //bar += 10000000;
-        //auto Results = findPrimes(foo, bar);
+      
+        mpz_class foo(Start.get());
+        mpz_class bar(foo);
+        bar += 1000;
+        auto Results = findPrimes(foo, bar);
 
-        //for (auto res : Results)
-        //{
-        //    Controller->ReportWork(*res.get_mpz_t());
-        //}
+        for (auto res : Results)
+        {
+            Controller->ReportWork(*res.get_mpz_t());
+        }
     }
     else
     {
