@@ -129,7 +129,7 @@ void Primebot::Start()
         
 
         std::string AsyncEnd(AsyncStart);
-        AsyncEnd = multiprecision_add( AsyncEnd, std::to_string(std::thread::hardware_concurrency()) + "000000");
+        AsyncEnd = multiprecision_add( AsyncEnd, std::to_string(std::thread::hardware_concurrency()) + "000");
         auto Results = findPrimes(AsyncStart, AsyncEnd);
 
         // Use network to report results
