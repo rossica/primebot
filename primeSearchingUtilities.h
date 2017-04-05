@@ -24,14 +24,23 @@ std::vector<T> concatenate(std::vector<T> first, std::vector<T> second) {
 template<typename T, typename Unaryop>
 auto map(Unaryop op, std::vector<T> in) {
     std::vector<decltype(op(std::move(in[0])))> results;
-    for (int i = 0; i != in.size(); i++)
-        results.push_back(op(std::move(in[i])));
+    std::transform(
+        std::make_move_iterator(std::begin(in)),
+        std::make_move_iterator(std::end(in)),
+        std::back_inserter(results),
+        op
+    );
     return results;
 }
 
 template<typename T, typename S, typename BinaryOp>
 auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
-    return std::accumulate(std::begin(factors), std::end(factors), init, op);
+    return std::accumulate(
+        std::begin(factors), 
+        std::end(factors), 
+        init, 
+        op
+    );
 }
 
 //Takes elements [x1, x2, x3, x4] to [g(x1, x2), g(x2, x3), g(x3, x4)]

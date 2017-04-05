@@ -3,6 +3,7 @@
 
 #include "PrimeTest.h"
 
+
 std::vector<mpz_class> partitionBorders(int numberOfPartitions, mpz_class start, mpz_class finish) {
     std::vector<mpz_class> results;
     mpz_class total = finish - start;
@@ -13,11 +14,16 @@ std::vector<mpz_class> partitionBorders(int numberOfPartitions, mpz_class start,
     return results;
 }
 
+bool isEven(mpz_class test) {
+    return mpz_even_p(test.get_mpz_t());
+}
+
 struct primesInRange {
     std::vector<mpz_class> operator()(mpz_class start, mpz_class finish) {
         std::vector<mpz_class> primes;
-        if (start % 2 == 0) start++;
-        for (auto primeCandidate = start; primeCandidate < finish; primeCandidate = primeCandidate + 2) {
+        if (isEven(start)) start++;
+ 
+        for (auto primeCandidate = start; primeCandidate < finish; primeCandidate += 2) {
             if (isLikelyPrime(primeCandidate)) {
                 primes.push_back(primeCandidate);
             }
@@ -26,22 +32,39 @@ struct primesInRange {
     }
 };
 
-std::vector<mpz_class> findPrimes(mpz_class start, mpz_class finish) {
-  
-    int threadTotal = std::thread::hardware_concurrency();
-    if (threadTotal == 0) return std::vector<mpz_class>{};
-    auto calculatePartition = [](mpz_class start, mpz_class end) {
-        return std::async(primesInRange{}, start, end);
-    };
-    return
+template<typename T>
+auto gatherResultsFromThreads(T&& in) {
+    return 
         accumulate(concatenate<mpz_class>, std::vector<mpz_class>{},
             map([](auto x) { return x.get(); },
-                applyPairwise(calculatePartition,
-                    partitionBorders(threadTotal,
-                        start,
-                        finish
-                    )
-                )
+                std::forward<T>(in) //Not sure why I need perfect forwarding here.
+            )
+        );
+}
+
+auto asyncronouslyDistributePrimeTest(int threadTotal, mpz_class start, mpz_class finish) {
+    auto calculatePartition = [](mpz_class start, mpz_class end) {
+        return std::async(std::launch::async, primesInRange{}, start, end);
+    };
+    return
+        applyPairwise(calculatePartition,
+            partitionBorders(threadTotal,
+                start,
+                finish
+            )
+        );
+}
+
+std::vector<mpz_class> findPrimes(mpz_class start, mpz_class finish) {  
+    int threadTotal = std::thread::hardware_concurrency();
+    if (threadTotal == 0) return std::vector<mpz_class>{};
+
+    return  
+        gatherResultsFromThreads( 
+            asyncronouslyDistributePrimeTest(
+                threadTotal, 
+                start, 
+                finish
             )
         );        
 }
