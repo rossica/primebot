@@ -75,6 +75,11 @@ inline void Threadpool<T,C>::Initialize()
 template<class T,class C>
 inline void Threadpool<T,C>::Stop()
 {
+    if (Stopped || Stopping)
+    {
+        return;
+    }
+
     Stopping = true;
 
     // Drain any remaining results

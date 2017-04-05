@@ -5,7 +5,6 @@
 #include <winsock2.h>
 #include <ws2ipdef.h>
 #include <WS2tcpip.h>
-#define s_addr S_un.S_addr
 typedef int socklen_t;
 typedef SOCKET NETSOCK;
 inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
@@ -36,6 +35,57 @@ inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 #endif
 
 #define STRING_BASE (62)
+
+char* NetworkController::ReceivePrime(NETSOCK Socket, char* Data, int Size)
+{
+    NETSOCK Result;
+    int ReceivedData = 0;
+    std::unique_ptr<char[]> TempData(nullptr);
+
+    // yep, I'm allocating memory based on what a remote host tells me.
+    // This is **VERY** INSECURE. Don't do it on networks that aren't secure.
+    // We have very weak "authentication": only clients that have registered
+    // with this server are allowed to send data.
+    if (Data == nullptr)
+    {
+        // Storing array in a unique_ptr to prevent leaks if this function crashes.
+        TempData.reset(new char[Size]);
+        Data = TempData.get();
+    }
+
+    do {
+        Result = recv(Socket, Data + ReceivedData, Size - ReceivedData, 0);
+        if (!IsSocketValid(Result) || Result == 0)
+        {
+            ReportError(" failed recv");
+            return nullptr;
+        }
+        ReceivedData += Result;
+
+    } while (IsSocketValid(Result) && Result > 0 && ReceivedData < Size);
+
+    return (TempData.get() != nullptr) ? TempData.release() : Data;
+}
+
+bool NetworkController::SendPrime(NETSOCK Socket, const char const * Prime, int Size)
+{
+    int SentData = 0;
+    NETSOCK Result;
+
+    do {
+        Result = send(Socket, Prime + SentData, Size - SentData, 0);
+
+        if (!IsSocketValid(Result))
+        {
+            ReportError(" send work");
+            return false;
+        }
+        SentData += Result;
+
+    } while (IsSocketValid(Result) && SentData < Size);
+
+    return true;
+}
 
 void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock)
 {
@@ -156,6 +206,7 @@ unique_mpz NetworkController::RequestWork()
     if (!IsSocketValid(Result))
     {
         ReportError(" send header");
+        closesocket(Socket);
         return nullptr;
     }
 
@@ -165,6 +216,7 @@ unique_mpz NetworkController::RequestWork()
     if (!IsSocketValid(Result) || Result == 0)
     {
         ReportError(" recv header");
+        closesocket(Socket);
         return nullptr;
     }
 
@@ -173,22 +225,11 @@ unique_mpz NetworkController::RequestWork()
     if (Header.Size < 1 || Header.Size > (INT_MAX >> 1))
     {
         ReportError(" header size invalid");
+        closesocket(Socket);
         return nullptr;
     }
 
-    // yep, I'm allocating memory based on what a remote host tells me.
-    // This is **VERY** INSECURE. Don't do it on networks that aren't secure.
-    std::unique_ptr<char[]> Data(new char[Header.Size]);
-
-    do {
-        Result = recv(Socket, Data.get() + ReceivedData, Header.Size - ReceivedData, 0);
-        if (!IsSocketValid(Result) || Result == 0)
-        {
-            ReportError(" recv data");
-        }
-        ReceivedData += Result;
-
-    } while (IsSocketValid(Result) && Result > 0 && ReceivedData < Header.Size);
+    std::unique_ptr<char[]> Data(ReceivePrime(Socket, nullptr, Header.Size));
 
     // Initialize the Workitem with the string returned from the server.
     unique_mpz WorkItem(new __mpz_struct);
@@ -206,6 +247,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     int SentData = 0;
     NETSOCK Result;
 
+    // Generate prime number to send to client
     unique_mpz Work(Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed));
 
     Size = mpz_sizeinbase(Work.get(), STRING_BASE) + 2;
@@ -228,22 +270,14 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     mpz_get_str(Data.get(), STRING_BASE, Work.get());
 
     // Send data now
-    do {
-        Result = send(ClientSock.ClientSocket, Data.get() + SentData, Size - SentData, 0);
-
-        if (!IsSocketValid(Result))
-        {
-            ReportError(" send work");
-        }
-        SentData += Result;
-
-    } while (IsSocketValid(Result) && SentData < Size);
+    SendPrime(ClientSock.ClientSocket, Data.get(), Size);
 }
 
 bool NetworkController::ReportWork(__mpz_struct& WorkItem)
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
+    bool Success;
     int SentData = 0;
     size_t Size = mpz_sizeinbase(&WorkItem, STRING_BASE) + 2;
     NetworkHeader Header = { 0 };
@@ -254,6 +288,8 @@ bool NetworkController::ReportWork(__mpz_struct& WorkItem)
     if (!IsSocketValid(Result))
     {
         ReportError(" send header");
+        shutdown(Socket, SD_SEND);
+        closesocket(Socket);
         return false;
     }
 
@@ -263,28 +299,15 @@ bool NetworkController::ReportWork(__mpz_struct& WorkItem)
     mpz_get_str(Data.get(), STRING_BASE, &WorkItem);
 
     // Send data now
-    do {
-        Result = send(Socket, Data.get() + SentData, Size - SentData, 0);
-
-        if (!IsSocketValid(Result))
-        {
-            ReportError(" send work");
-            return false;
-        }
-        SentData += Result;
-
-    } while (IsSocketValid(Result) && SentData < Size);
+    Success = SendPrime(Socket, Data.get(), Size);
 
     shutdown(Socket, SD_SEND);
     closesocket(Socket);
-    return true;
+    return Success;
 }
 
 void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int Size)
 {
-    NETSOCK Result;
-    int ReceivedData = 0;
-
     // Not sending any data on this socket, so shutdown send
     shutdown(ClientSock.ClientSocket, SD_SEND);
 
@@ -294,23 +317,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
         return;
     }
 
-    // yep, I'm allocating memory based on what a remote host tells me.
-    // This is **VERY** INSECURE. Don't do it on networks that aren't secure.
-    // We have very weak "authentication": only clients that have registered
-    // with this server are allowed to send data.
-    std::unique_ptr<char[]> Data(new char[Size]);
-
-    do {
-        Result = recv(ClientSock.ClientSocket, Data.get() + ReceivedData, Size - ReceivedData, 0);
-        if (!IsSocketValid(Result) || Result == 0)
-        {
-            ReportError(" failed recv");
-            return;
-        }
-        ReceivedData += Result;
-
-    } while (IsSocketValid(Result) && Result > 0 && ReceivedData < Size);
-
+    std::unique_ptr<char[]> Data(ReceivePrime(ClientSock.ClientSocket, nullptr, Size));
 
     if (!Settings.FileSettings.Path.empty())
     {
@@ -329,19 +336,134 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
     }
 }
 
-bool NetworkController::BatchReportWork(std::iterator<std::_General_ptr_iterator_tag, unique_mpz> it)
+bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems)
 {
-    // TODO
-    return false;
+    NETSOCK Socket = GetSocketToServer();
+    NETSOCK Result;
+    NetworkHeader Header = { 0 };
+    int Size;
+    int LastSize = 0;
+    int NetSize;
+    std::unique_ptr<char[]> Data;
+
+    Header.Type = NetworkMessageType::BatchReportWork;
+    Header.Size = htonl(WorkItems.size());
+
+    // Send header with count of WorkItems
+    Result = send(Socket, (char*)&Header, sizeof(Header), 0);
+    if (!IsSocketValid(Result))
+    {
+        ReportError(" send header");
+        shutdown(Socket, SD_SEND);
+        closesocket(Socket);
+        return false;
+    }
+
+    for (int i = 0; i < WorkItems.size(); i++)
+    {
+        Size = mpz_sizeinbase(WorkItems[i].get(), STRING_BASE) + 2;
+        if (Size > LastSize)
+        {
+            Data.reset(new char[Size]);
+            LastSize = Size;
+        }
+        else
+        {
+            memset(Data.get(), 0, LastSize); // Assumption: zeroing out memory is faster than malloc()
+        }
+        mpz_get_str(Data.get(), STRING_BASE, WorkItems[i].get());
+
+        // Convert Size to network-format.
+        NetSize = htonl(Size);
+
+        Result = send(Socket, (char*)&NetSize, sizeof(NetSize), 0);
+        if (!IsSocketValid(Result))
+        {
+            ReportError(" send size: " + std::to_string(i));
+            shutdown(Socket, SD_SEND);
+            closesocket(Socket);
+            return false;
+        }
+
+        if (!SendPrime(Socket, Data.get(), Size))
+        {
+            ReportError(" send prime: " + std::to_string(i));
+            shutdown(Socket, SD_SEND);
+            closesocket(Socket);
+            return false;
+        }
+    }
+
+    closesocket(Socket);
+    return true;
+}
+
+bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
+{
+    NETSOCK Socket = GetSocketToServer();
+    NETSOCK Result;
+    NetworkHeader Header = { 0 };
+    int Size;
+    int LastSize = 0;
+    int NetSize;
+    std::string Data;
+
+    Header.Type = NetworkMessageType::BatchReportWork;
+    Header.Size = htonl(WorkItems.size());
+
+    // Send header with count of WorkItems
+    Result = send(Socket, (char*)&Header, sizeof(Header), 0);
+    if (!IsSocketValid(Result))
+    {
+        ReportError(" send header");
+        shutdown(Socket, SD_SEND);
+        closesocket(Socket);
+        return false;
+    }
+
+    for (mpz_class& WorkItem : WorkItems)
+    {
+        Size = mpz_sizeinbase(WorkItem.get_mpz_t(), STRING_BASE) + 2;
+        Data = WorkItem.get_str(STRING_BASE); // suspect this leaks memory
+
+        // Convert Size to network-format.
+        NetSize = htonl(Size);
+
+        Result = send(Socket, (char*)&NetSize, sizeof(NetSize), 0);
+        if (!IsSocketValid(Result))
+        {
+            ReportError(" send size");
+            shutdown(Socket, SD_SEND);
+            closesocket(Socket);
+            return false;
+        }
+
+        if (!SendPrime(Socket, Data.c_str(), Size))
+        {
+            ReportError(" send prime");
+            shutdown(Socket, SD_SEND);
+            closesocket(Socket);
+            return false;
+        }
+    }
+
+    closesocket(Socket);
+    return true;
 }
 
 void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count)
 {
     NETSOCK Result;
     int Size;
+    int LastSize = 0; // Size of previous allocation
+    std::unique_ptr<char[]> Data;
+
+    // Only receiving data here
+    shutdown(ClientSock.ClientSocket, SD_SEND);
 
     for (int i = 0; i < Count; i++)
     {
+        // Receive size of prime
         Result = recv(ClientSock.ClientSocket, (char*)&Size, sizeof(Size), 0);
         if (!IsSocketValid(Result))
         {
@@ -349,7 +471,46 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
             return;
         }
 
-        HandleReportWork(ClientSock, ntohl(Size));
+        Size = ntohl(Size);
+
+        // Optimization to prevent many memory allocations
+        if (Size > LastSize)
+        {
+            Data.reset(ReceivePrime(ClientSock.ClientSocket, nullptr, Size));
+            LastSize = Size;
+
+            if (Data.get() == nullptr)
+            {
+                ReportError(" recv prime " + std::to_string(i));
+                return;
+            }
+        }
+        else
+        {
+            memset(Data.get(), 0, LastSize); // Assumption: zeroing out memory is faster than malloc()
+            if (ReceivePrime(ClientSock.ClientSocket, Data.get(), Size) == nullptr)
+            {
+                ReportError(" recv prime " + std::to_string(i));
+                return;
+            }
+        }
+
+
+        if (!Settings.FileSettings.Path.empty())
+        {
+            // TODO
+            // open a file handle of the path:
+            // c:\path\passed\in\<ipaddress>\<power-of-2>.txt
+            // write Data to file
+        }
+        else
+        {
+            unique_mpz Work(new __mpz_struct);
+            mpz_init_set_str(Work.get(), Data.get(), STRING_BASE);
+
+            //std::cout << mpz_get_ui(Work.get()) << std::endl;
+            gmp_printf("%Zd\n", Work.get());
+        }
     }
 }
 
