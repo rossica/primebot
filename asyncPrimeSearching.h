@@ -1,7 +1,7 @@
 #pragma once
 
-#include<string>
-#include<vector>
+#include <string>
+#include <vector>
 
 #pragma warning( push )
 #pragma warning( disable: 4146 )
