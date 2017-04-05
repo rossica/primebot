@@ -87,7 +87,7 @@
     </ClCompile>
     <Link />
     <Link>
-      <AdditionalDependencies>$(ProjectDir)\lib\libgmp-3.lib;$(ProjectDir)\lib\libgmpxx-3.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)\lib\libgmp-3.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -119,6 +119,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="asyncPrimeSearching.cpp" />
     <ClCompile Include="commandparser.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="networkcontroller.cpp" />
@@ -134,6 +135,7 @@
     <ClInclude Include="onelockthreadpool.h" />
     <ClInclude Include="pal.h" />
     <ClInclude Include="prime.h" />
+    <ClInclude Include="primeSearchingUtilities.h" />
     <ClInclude Include="PrimeTest.h" />
     <ClInclude Include="threadpool.h" />
   </ItemGroup>
