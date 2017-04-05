@@ -32,17 +32,23 @@ struct primesInRange {
     }
 };
 
-template<typename T>
-auto gatherResultsFromThreads(T&& in) {
+
+std::vector<mpz_class> gatherResultsFromThreads(
+    std::vector<
+        std::future< std::vector<mpz_class> > 
+    > in) {
     return 
         accumulate(concatenate<mpz_class>, std::vector<mpz_class>{},
             map([](auto x) { return x.get(); },
-                std::forward<T>(in) //Not sure why I need perfect forwarding here.
+                std::move(in)
             )
         );
 }
 
-auto asyncronouslyDistributePrimeTest(int threadTotal, mpz_class start, mpz_class finish) {
+std::vector<
+    std::future< std::vector<mpz_class> > 
+> 
+asyncronouslyDistributePrimeTest(int threadTotal, mpz_class start, mpz_class finish) {
     auto calculatePartition = [](mpz_class start, mpz_class end) {
         return std::async(std::launch::async, primesInRange{}, start, end);
     };
