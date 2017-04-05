@@ -1,8 +1,9 @@
 #pragma once
 
 #if defined(_WIN32) || defined(_WIN64)
-#define NOMINMAX
+#define NOMINMAX // windows.h provides MIN/MAX macros that conflict with min()/max() in gmpxx.h
 #include <winsock2.h>
+#include <ws2ipdef.h>
 typedef SOCKET NETSOCK;
 #elif defined __linux__
 #include <sys/types.h>
@@ -20,11 +21,7 @@ typedef int NETSOCK;
 #include "prime.h"
 #include "commandparsertypes.h"
 
-
 #define CLIENT_PORT (htons(60001))
-
-// Forward Declarations
-//class Primebot;
 
 struct NetworkConnectionInfo
 {
@@ -103,6 +100,10 @@ private:
     NETSOCK ListenSocket;
     Primebot* Bot;
 
+    // helper functions
+    char* ReceivePrime(NETSOCK Socket, char* Data, int Size);
+    bool SendPrime(NETSOCK Socket, const char const * Prime, int Size);
+
     // handles incoming requests, for client and server
     void HandleRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock);
 
@@ -132,7 +133,8 @@ public:
     bool RegisterClient();
     unique_mpz RequestWork();
     bool ReportWork(__mpz_struct& WorkItem);
-    bool BatchReportWork(std::iterator<std::_General_ptr_iterator_tag, unique_mpz> it);
+    bool BatchReportWork(std::vector<unique_mpz>& WorkItems);
+    bool BatchReportWork(std::vector<mpz_class>& WorkItems);
     void UnregisterClient();
     void ShutdownClients();
 };

@@ -4,7 +4,7 @@
 #pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
 #include "gmp.h"
-//#include "gmpxx.h" // uncomment when you figure out who is including windows.h without NOMINMAX
+#include "gmpxx.h"
 #pragma warning( pop )
 #include "threadpool.h"
 
