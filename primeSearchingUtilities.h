@@ -35,11 +35,12 @@ auto map(Unaryop op, std::vector<T> in) {
 
 template<typename T, typename S, typename BinaryOp>
 auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
-    return std::accumulate(
-        std::begin(factors), 
-        std::end(factors), 
-        init, 
-        op
+    return 
+        std::accumulate(
+            std::begin(factors), 
+            std::end(factors), 
+            init, 
+            op
     );
 }
 
@@ -47,7 +48,7 @@ auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
 template<typename T, typename G>
 auto applyPairwise(G g, std::vector<T> elements) {
     std::vector<decltype(g(elements[0], elements[0]))> results;
-    for (int i = 0; i != (elements.size() - 1); i++) {
+    for (int i = 0; i < (elements.size() - 1); i++) {
         results.push_back(g(elements[i], elements[i + 1]));
     }
     return results;
