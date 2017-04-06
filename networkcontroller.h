@@ -95,7 +95,8 @@ class NetworkController
 {
 private:
     AllPrimebotSettings Settings;
-    Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> tp;
+    Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
+    Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> CompleteConnections;
     std::set<AddressType> Clients;
     NETSOCK ListenSocket;
     Primebot* Bot;
@@ -105,7 +106,7 @@ private:
     bool SendPrime(NETSOCK Socket, const char const * Prime, int Size);
 
     // handles incoming requests, for client and server
-    void HandleRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock);
+    void HandleRequest(decltype(OutstandingConnections)& pool, NetworkConnectionInfo ClientSock);
 
     void HandleRegisterClient(NetworkConnectionInfo& ClientSock);
     void HandleRequestWork(NetworkConnectionInfo& ClientSock);
@@ -114,7 +115,7 @@ private:
     void HandleUnregisterClient(NetworkConnectionInfo& ClientSock);
     void HandleShutdownClient(NetworkConnectionInfo& ServerSock);
 
-    void CleanupRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock);
+    void CleanupRequest(decltype(CompleteConnections)& pool, NetworkConnectionInfo ClientSock);
 
     void ListenLoop();
     void ClientBind();

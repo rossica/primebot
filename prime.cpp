@@ -40,7 +40,7 @@ unique_mpz Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
     return std::move(Work);
 }
 
-void Primebot::FindPrime(decltype(tp)& pool, unique_mpz&& workitem)
+void Primebot::FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem)
 {
     // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
     // composite number will pass the nth iteration of the test.
@@ -51,7 +51,7 @@ void Primebot::FindPrime(decltype(tp)& pool, unique_mpz&& workitem)
     // Or so I think...
     if (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2)/2)))
     {
-        pool.EnqueueResult(std::move(workitem));
+        Results.EnqueueWorkItem(std::move(workitem));
     }
     else
     {
@@ -60,7 +60,7 @@ void Primebot::FindPrime(decltype(tp)& pool, unique_mpz&& workitem)
     }
 }
 
-void Primebot::FoundPrime(decltype(tp)& pool, unique_mpz&& result)
+void Primebot::FoundPrime(decltype(Results)& pool, unique_mpz&& result)
 {
     if (Controller != nullptr)
     {
@@ -79,14 +79,15 @@ void Primebot::FoundPrime(decltype(tp)& pool, unique_mpz&& result)
     }
 
     mpz_add_ui(result.get(), result.get(), (2 * pool.GetThreadCount()));
-    pool.EnqueueWorkItem(std::move(result));
+    Candidates.EnqueueWorkItem(std::move(result));
 }
 
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
     Settings(Config),
     Controller(NetController),
-    tp(Config.PrimeSettings.ThreadCount,
-        std::bind(&Primebot::FindPrime, this, std::placeholders::_1, std::placeholders::_2),
+    Candidates(Config.PrimeSettings.ThreadCount,
+        std::bind(&Primebot::FindPrime, this, std::placeholders::_1, std::placeholders::_2)),
+    Results(Config.PrimeSettings.ThreadCount,
         std::bind(&Primebot::FoundPrime, this, std::placeholders::_1, std::placeholders::_2))
 {
 }
@@ -143,20 +144,21 @@ void Primebot::Start()
     }
     else
     {
-        for (unsigned int i = 1; i <= tp.GetThreadCount(); i++)
+        for (unsigned int i = 1; i <= Candidates.GetThreadCount(); i++)
         {
             unique_mpz work(new __mpz_struct);
             // ((2 * i) + Start)
             mpz_init_set(work.get(), Start.get());
             mpz_add_ui(work.get(), work.get(), (2 * i));
-            tp.EnqueueWorkItem(std::move(work));
+            Candidates.EnqueueWorkItem(std::move(work));
         }
     }
 }
 
 void Primebot::Stop()
 {
-    tp.Stop();
+    Candidates.Stop();
+    Results.Stop();
     if (Controller != nullptr)
     {
         Controller->UnregisterClient();

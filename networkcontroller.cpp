@@ -87,7 +87,7 @@ bool NetworkController::SendPrime(NETSOCK Socket, const char const * Prime, int 
     return true;
 }
 
-void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock)
+void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, NetworkConnectionInfo ClientSock)
 {
     if (!IsSocketValid(ClientSock.ClientSocket))
     {
@@ -146,10 +146,10 @@ void NetworkController::HandleRequest(decltype(tp)& pool, NetworkConnectionInfo 
     
     //// When finished, close the client socket
     shutdown(ClientSock.ClientSocket, SD_BOTH);
-    pool.EnqueueResult(std::move(ClientSock));
+    CompleteConnections.EnqueueWorkItem(std::move(ClientSock));
 }
 
-void NetworkController::CleanupRequest(decltype(tp)& pool, NetworkConnectionInfo ClientSock)
+void NetworkController::CleanupRequest(decltype(CompleteConnections)& pool, NetworkConnectionInfo ClientSock)
 {
     // When finished, close the client socket
     closesocket(ClientSock.ClientSocket);
@@ -318,6 +318,12 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
     }
 
     std::unique_ptr<char[]> Data(ReceivePrime(ClientSock.ClientSocket, nullptr, Size));
+
+    if (Data == nullptr)
+    {
+        ReportError(" failed to recv workitem");
+        return;
+    }
 
     if (!Settings.FileSettings.Path.empty())
     {
@@ -496,6 +502,9 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
         }
 
 
+        // Consider a threadpool to actually handle the file IO, since
+        // that may be slow. The server should have enough memory to hold
+        // all the data until it is written out.
         if (!Settings.FileSettings.Path.empty())
         {
             // TODO
@@ -600,7 +609,7 @@ void NetworkController::ListenLoop()
 
         // Let the thread handle whether the socket is valid or not.
         //std::async(&NetworkController::HandleRequest, this, std::move(ConnInfo));
-        tp.EnqueueWorkItem(std::move(ConnInfo));
+        OutstandingConnections.EnqueueWorkItem(std::move(ConnInfo));
     }
 }
 
@@ -715,9 +724,11 @@ NETSOCK NetworkController::GetSocketToServer()
 
 NetworkController::NetworkController(AllPrimebotSettings Config) :
     Settings(Config),
-    tp(
+    OutstandingConnections(
         2 * std::thread::hardware_concurrency(),
-        std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1, std::placeholders::_2)),
+    CompleteConnections(
+        std::thread::hardware_concurrency(),
         std::bind(&NetworkController::CleanupRequest, this, std::placeholders::_1, std::placeholders::_2)),
     ListenSocket(INVALID_SOCKET),
     Bot(nullptr)
@@ -733,7 +744,8 @@ NetworkController::NetworkController(AllPrimebotSettings Config) :
     if (!Settings.NetworkSettings.Server)
     {
         // Threadpool unused on client, so kill it
-        tp.Stop();
+        OutstandingConnections.Stop();
+        CompleteConnections.Stop();
     }
 }
 
@@ -750,7 +762,8 @@ NetworkController::~NetworkController()
 
     if (Settings.NetworkSettings.Server)
     {
-        tp.Stop();
+        OutstandingConnections.Stop();
+        CompleteConnections.Stop();
     }
 }
 
@@ -796,6 +809,8 @@ void NetworkController::Start()
     }
 }
 
+// Included here to reduce the number of Winsock headers to drag into
+// project headers.
 inline bool operator<(const AddressType& Left, const AddressType& Right)
 {
     // Compare address families
@@ -811,5 +826,3 @@ inline bool operator<(const AddressType& Left, const AddressType& Right)
 
     return (memcmp(&Left.IPv6.sin6_addr, &Right.IPv6.sin6_addr, sizeof(sockaddr_in6)) < 0);
 }
-
-
