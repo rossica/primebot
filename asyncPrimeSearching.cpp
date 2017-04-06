@@ -34,9 +34,7 @@ struct primesInRange {
 
 
 std::vector<mpz_class> gatherResultsFromThreads(
-    std::vector<
-        std::future< std::vector<mpz_class> > 
-    > in) {
+    std::vector< std::future< std::vector<mpz_class> > > in) {
     return 
         accumulate(concatenate<mpz_class>, std::vector<mpz_class>{},
             map([](auto x) { return x.get(); },
