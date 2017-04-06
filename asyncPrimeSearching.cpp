@@ -43,9 +43,7 @@ std::vector<mpz_class> gatherResultsFromThreads(
         );
 }
 
-std::vector<
-    std::future< std::vector<mpz_class> > 
-> 
+std::vector< std::future< std::vector<mpz_class> > > 
 asyncronouslyDistributePrimeTest(int threadTotal, mpz_class start, mpz_class finish) {
     auto calculatePartition = [](mpz_class start, mpz_class end) {
         return std::async(std::launch::async, primesInRange{}, start, end);
