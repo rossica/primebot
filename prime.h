@@ -29,16 +29,16 @@ class Primebot
 {
 private:
     NetworkController* Controller;
-    Threadpool<unique_mpz> Candidates;
+    Threadpool<mpz_class> Candidates;
     AllPrimebotSettings Settings;
-    void FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem);
+    void FindPrime(decltype(Candidates)& pool, mpz_class&& workitem);
     std::atomic<bool> Quit;
 public:
     Primebot() = delete;
     Primebot(AllPrimebotSettings config, NetworkController* NetController);
     ~Primebot();
 
-    static unique_mpz GenerateRandomOdd(unsigned int Bits, unsigned int Seed);
+    static mpz_class GenerateRandomOdd(unsigned int Bits, unsigned int Seed);
 
     void Start();
     void Stop();

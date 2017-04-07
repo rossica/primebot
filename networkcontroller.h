@@ -132,9 +132,9 @@ public:
     void SetPrimebot(Primebot* bot) { Bot = bot; }
 
     bool RegisterClient();
-    unique_mpz RequestWork();
+    mpz_class RequestWork();
     bool ReportWork(__mpz_struct& WorkItem);
-    bool BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t count);
+    bool BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t count = 0);
     bool BatchReportWork(std::vector<mpz_class>& WorkItems);
     void UnregisterClient();
     void ShutdownClients();

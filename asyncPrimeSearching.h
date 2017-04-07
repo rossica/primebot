@@ -10,4 +10,4 @@
 #include "gmpxx.h"
 #pragma warning( pop )
 
-std::vector<mpz_class> findPrimes(mpz_class start, mpz_class finish);
+std::vector<mpz_class> findPrimes(int threadTotal, mpz_class start, mpz_class finish);

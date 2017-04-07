@@ -12,7 +12,7 @@
 // Yeah this is kind of ugly, Old-C style.
 // Feel free to send a PR with a better way to do this.
 // Maybe a Generator?
-unique_mpz Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
+mpz_class Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
 {
     static gmp_randstate_t Rand = { 0 };
     static unsigned int LastSeed = 0;
@@ -27,35 +27,32 @@ unique_mpz Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
         LastSeed = Seed;
     }
 
-    unique_mpz Work(new __mpz_struct);
+    mpz_class Work;
     //mpz_init_set_ui(Work.get(), 1);
-    mpz_init(Work.get());
-    mpz_urandomb(Work.get(), Rand, Bits);
+    mpz_urandomb(Work.get_mpz_t(), Rand, Bits);
 
-    if (mpz_even_p(Work.get()))
+    if (mpz_even_p(Work.get_mpz_t()))
     {
-        mpz_add_ui(Work.get(), Work.get(), 1);
+        Work += 1;
     }
 
     return std::move(Work);
 }
 
-void Primebot::FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem)
+void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
 {
     unsigned int Step = pool.GetThreadCount();
 
     for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchesToSend && !Quit; j++)
     {
-        // pre-allocate vector size
-        std::vector<unique_mpz> Batch(Settings.PrimeSettings.BatchSize);
-        unsigned int i;
+        std::vector<mpz_class> Batch;
 
-        for (i = 0; i < Settings.PrimeSettings.BatchSize && !Quit; i++)
+        for (unsigned int i = 0; i < Settings.PrimeSettings.BatchSize && !Quit; i++)
         {
-            if (mpz_even_p(workitem.get()))
+            if (mpz_even_p(workitem.get_mpz_t()))
             {
                 std::cout << "WHY IS THIS EVEN?!" << std::endl;
-                mpz_add_ui(workitem.get(), workitem.get(), 1);
+                workitem += 1;
             }
 
             // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
@@ -65,46 +62,46 @@ void Primebot::FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem)
             // This has the property of putting the probability of a composite passing
             // the test to be less than the count of possible numbers for a given bit-length.
             // Or so I think...
-            while (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2) / 2)) == 0 && !Quit)
+            while (mpz_probab_prime_p(workitem.get_mpz_t(), (mpz_sizeinbase(workitem.get_mpz_t(), 2) / 2)) == 0 && !Quit)
             {
-                mpz_add_ui(workitem.get(), workitem.get(), Step);
+                workitem += Step;
             }
 
             // If not quitting, just add the number to the list of results
             if (!Quit)
             {
                 // Copy the result to the Results queue
-                unique_mpz Result(new __mpz_struct);
-                mpz_init_set(Result.get(), workitem.get());
-                Batch[i] = std::move(Result);
+                mpz_class Result(workitem);
+                Batch.push_back(std::move(Result));
             }
             else
             {
                 // During quit, make sure that the number is actually prime
-                if (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2) / 2)))
+                if (mpz_probab_prime_p(workitem.get_mpz_t(), (mpz_sizeinbase(workitem.get_mpz_t(), 2) / 2)))
                 {
                     // Copy the result to the Results queue
-                    unique_mpz Result(new __mpz_struct);
-                    mpz_init_set(Result.get(), workitem.get());
-                    Batch[i] = std::move(Result);
+                    mpz_class Result(workitem);
+                    Batch.push_back(std::move(Result));
                 }
             }
 
-            mpz_add_ui(workitem.get(), workitem.get(), Step);
+            workitem += Step;
         }
 
         if (Controller != nullptr)
         {
-            Controller->BatchReportWork(Batch, i);
+            Controller->BatchReportWork(Batch);
         }
         else
         {
             // Todo: write out to disk here if file path present
             for (auto& mpz : Batch)
             {
-                gmp_printf("%Zd\n", mpz.get());
+                gmp_printf("%Zd\n", mpz.get_mpz_t());
             }
         }
+
+        Batch.clear();
     }
 }
 
@@ -123,7 +120,7 @@ Primebot::~Primebot()
 
 void Primebot::Start()
 {
-    unique_mpz Start(nullptr);
+    mpz_class Start;
 
     if (Controller != nullptr)
     {
@@ -134,7 +131,7 @@ void Primebot::Start()
         }
 
         Start = Controller->RequestWork();
-        while (Start == nullptr)
+        while (Start.get_ui() == 0)
         {
             // Failed to get work item, try again.
             std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -149,10 +146,10 @@ void Primebot::Start()
     if (Settings.PrimeSettings.UseAsync)
     {
         // Async implementation
-        mpz_class AsyncStart(Start.get());
+        mpz_class AsyncStart(Start);
         mpz_class AsyncEnd(AsyncStart);
-        AsyncEnd += std::thread::hardware_concurrency() * 10000;
-        auto Results = findPrimes(AsyncStart, AsyncEnd);
+        AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize;
+        auto Results = findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd);
 
         // Use network to report results
         if (Controller != nullptr)
@@ -171,10 +168,9 @@ void Primebot::Start()
     {
         for (unsigned int i = 1; i <= Candidates.GetThreadCount(); i++)
         {
-            unique_mpz work(new __mpz_struct);
             // ((2 * i) + Start)
-            mpz_init_set(work.get(), Start.get());
-            mpz_add_ui(work.get(), work.get(), (2 * i));
+            mpz_class work(Start);
+            work += (2 * i);
             Candidates.EnqueueWorkItem(std::move(work));
         }
     }

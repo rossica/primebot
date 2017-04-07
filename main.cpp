@@ -2,7 +2,6 @@
 #include <string>
 #include <memory>
 
-//#include "onelockthreadpool.h"
 #include "asyncPrimeSearching.h"
 #include "networkcontroller.h"
 #include "commandparser.h"
@@ -10,7 +9,7 @@
 #include "pal.h"
 
 // Global program state
-// (Currently used for signal handlers
+// (Currently used for signal handlers)
 AllPrimebotSettings ProgramSettings;
 NetworkController* Controller = nullptr;
 Primebot* Bot = nullptr;
@@ -22,7 +21,7 @@ int main(int argc, char** argv)
     /*
     mpz_class a = 3;
     mpz_class b = 5000;
-    auto primes = findPrimes(a, b);
+    auto primes = findPrimes(8, a, b);
     for (auto v : primes)
         std::cout << v.get_str() << std::endl; //TODO: strange bug isn't linking operator<< properly.
 

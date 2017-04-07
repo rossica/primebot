@@ -194,7 +194,7 @@ void NetworkController::HandleRegisterClient(NetworkConnectionInfo& ClientSock)
     std::cout << std::endl;
 }
 
-unique_mpz NetworkController::RequestWork()
+mpz_class NetworkController::RequestWork()
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
@@ -207,7 +207,7 @@ unique_mpz NetworkController::RequestWork()
     {
         ReportError(" send header");
         closesocket(Socket);
-        return nullptr;
+        return mpz_class();
     }
 
     shutdown(Socket, SD_SEND);
@@ -217,7 +217,7 @@ unique_mpz NetworkController::RequestWork()
     {
         ReportError(" recv header");
         closesocket(Socket);
-        return nullptr;
+        return mpz_class();
     }
 
     Header.Size = ntohl(Header.Size);
@@ -226,15 +226,14 @@ unique_mpz NetworkController::RequestWork()
     {
         ReportError(" header size invalid");
         closesocket(Socket);
-        return nullptr;
+        return mpz_class();
     }
 
     std::unique_ptr<char[]> Data(ReceivePrime(Socket, nullptr, Header.Size));
 
     // Initialize the Workitem with the string returned from the server.
-    unique_mpz WorkItem(new __mpz_struct);
-    mpz_init_set_str(WorkItem.get(), Data.get(), STRING_BASE);
-    std::cout << "bit-length of start number: " << mpz_sizeinbase(WorkItem.get(), 2) << std::endl;
+    mpz_class WorkItem(Data.get(), STRING_BASE);
+    std::cout << "bit-length of start number: " << mpz_sizeinbase(WorkItem.get_mpz_t(), 2) << std::endl;
 
     closesocket(Socket);
     return std::move(WorkItem);
@@ -248,9 +247,9 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     NETSOCK Result;
 
     // Generate prime number to send to client
-    unique_mpz Work(Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed));
+    mpz_class Work(Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed));
 
-    Size = mpz_sizeinbase(Work.get(), STRING_BASE) + 2;
+    Size = mpz_sizeinbase(Work.get_mpz_t(), STRING_BASE) + 2;
 
     Header.Type = NetworkMessageType::WorkItem;
     Header.Size = htonl(Size);
@@ -264,13 +263,10 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     }
 
     // send number back to requestor
-    // Using this instead of mpz_class::get_str because that
-    // appears to have a memory leak.
-    std::unique_ptr<char[]> Data(new char[Size]);
-    mpz_get_str(Data.get(), STRING_BASE, Work.get());
+    std::string Data = Work.get_str(STRING_BASE);
 
     // Send data now
-    SendPrime(ClientSock.ClientSocket, Data.get(), Size);
+    SendPrime(ClientSock.ClientSocket, Data.c_str(), Size);
 }
 
 bool NetworkController::ReportWork(__mpz_struct& WorkItem)
@@ -342,7 +338,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
     }
 }
 
-bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t Count = 0)
+bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t Count)
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;

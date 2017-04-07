@@ -57,8 +57,7 @@ asyncronouslyDistributePrimeTest(int threadTotal, mpz_class start, mpz_class fin
         );
 }
 
-std::vector<mpz_class> findPrimes(mpz_class start, mpz_class finish) {  
-    int threadTotal = std::thread::hardware_concurrency();
+std::vector<mpz_class> findPrimes(int threadTotal, mpz_class start, mpz_class finish) {
     if (threadTotal == 0) return std::vector<mpz_class>{};
 
     return  
