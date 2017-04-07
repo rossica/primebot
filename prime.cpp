@@ -42,6 +42,8 @@ unique_mpz Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
 
 void Primebot::FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem)
 {
+    unsigned int Step = 2 * pool.GetThreadCount();
+
     // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
     // composite number will pass the nth iteration of the test.
     // The below selects the bit-length of the candidate prime, divided by 2
@@ -49,15 +51,19 @@ void Primebot::FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem)
     // This has the property of putting the probability of a composite passing
     // the test to be less than the count of possible numbers for a given bit-length.
     // Or so I think...
-    if (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2)/2)))
+    while (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2)/2)) == 0)
     {
-        Results.EnqueueWorkItem(std::move(workitem));
+        mpz_add_ui(workitem.get(), workitem.get(), Step);
     }
-    else
-    {
-        mpz_add_ui(workitem.get(), workitem.get(), 2 * pool.GetThreadCount());
-        pool.EnqueueWorkItem(std::move(workitem));
-    }
+
+    // Copy the result to the Results queue
+    unique_mpz Result(new __mpz_struct);
+    mpz_init_set(Result.get(), workitem.get());
+    Results.EnqueueWorkItem(std::move(Result));
+
+    // Enqueue the next candidate and see if there's new work in the pool
+    mpz_add_ui(workitem.get(), workitem.get(), Step);
+    pool.EnqueueWorkItem(std::move(workitem));
 }
 
 void Primebot::FoundPrime(decltype(Results)& pool, unique_mpz&& result)
@@ -67,8 +73,8 @@ void Primebot::FoundPrime(decltype(Results)& pool, unique_mpz&& result)
         if (!Controller->ReportWork(*result))
         {
             // Failed to send work, try again
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            pool.EnqueueWorkItem(std::move(result));
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            Controller->ReportWork(*result);
             return;
         }
     }
@@ -78,8 +84,7 @@ void Primebot::FoundPrime(decltype(Results)& pool, unique_mpz&& result)
         gmp_printf("%Zd\n", result.get());
     }
 
-    mpz_add_ui(result.get(), result.get(), (2 * pool.GetThreadCount()));
-    Candidates.EnqueueWorkItem(std::move(result));
+    // Let the result go out of scope and get cleaned up.
 }
 
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
