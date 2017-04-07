@@ -30,10 +30,9 @@ class Primebot
 private:
     NetworkController* Controller;
     Threadpool<unique_mpz> Candidates;
-    Threadpool<unique_mpz> Results;
     AllPrimebotSettings Settings;
     void FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem);
-    void FoundPrime(decltype(Results)& pool, unique_mpz&& result);
+    std::atomic<bool> Quit;
 public:
     Primebot() = delete;
     Primebot(AllPrimebotSettings config, NetworkController* NetController);

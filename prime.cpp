@@ -42,49 +42,70 @@ unique_mpz Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
 
 void Primebot::FindPrime(decltype(Candidates)& pool, unique_mpz&& workitem)
 {
-    unsigned int Step = 2 * pool.GetThreadCount();
+    unsigned int Step = pool.GetThreadCount();
 
-    // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
-    // composite number will pass the nth iteration of the test.
-    // The below selects the bit-length of the candidate prime, divided by 2
-    // as the number of iterations to perform.
-    // This has the property of putting the probability of a composite passing
-    // the test to be less than the count of possible numbers for a given bit-length.
-    // Or so I think...
-    while (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2)/2)) == 0)
+    for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchesToSend && !Quit; j++)
     {
-        mpz_add_ui(workitem.get(), workitem.get(), Step);
-    }
+        // pre-allocate vector size
+        std::vector<unique_mpz> Batch(Settings.PrimeSettings.BatchSize);
+        unsigned int i;
 
-    // Copy the result to the Results queue
-    unique_mpz Result(new __mpz_struct);
-    mpz_init_set(Result.get(), workitem.get());
-    Results.EnqueueWorkItem(std::move(Result));
-
-    // Enqueue the next candidate and see if there's new work in the pool
-    mpz_add_ui(workitem.get(), workitem.get(), Step);
-    pool.EnqueueWorkItem(std::move(workitem));
-}
-
-void Primebot::FoundPrime(decltype(Results)& pool, unique_mpz&& result)
-{
-    if (Controller != nullptr)
-    {
-        if (!Controller->ReportWork(*result))
+        for (i = 0; i < Settings.PrimeSettings.BatchSize && !Quit; i++)
         {
-            // Failed to send work, try again
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            Controller->ReportWork(*result);
-            return;
+            if (mpz_even_p(workitem.get()))
+            {
+                std::cout << "WHY IS THIS EVEN?!" << std::endl;
+                mpz_add_ui(workitem.get(), workitem.get(), 1);
+            }
+
+            // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
+            // composite number will pass the nth iteration of the test.
+            // The below selects the bit-length of the candidate prime, divided by 2
+            // as the number of iterations to perform.
+            // This has the property of putting the probability of a composite passing
+            // the test to be less than the count of possible numbers for a given bit-length.
+            // Or so I think...
+            while (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2) / 2)) == 0 && !Quit)
+            {
+                mpz_add_ui(workitem.get(), workitem.get(), Step);
+            }
+
+            // If not quitting, just add the number to the list of results
+            if (!Quit)
+            {
+                // Copy the result to the Results queue
+                unique_mpz Result(new __mpz_struct);
+                mpz_init_set(Result.get(), workitem.get());
+                Batch[i] = std::move(Result);
+            }
+            else
+            {
+                // During quit, make sure that the number is actually prime
+                if (mpz_probab_prime_p(workitem.get(), (mpz_sizeinbase(workitem.get(), 2) / 2)))
+                {
+                    // Copy the result to the Results queue
+                    unique_mpz Result(new __mpz_struct);
+                    mpz_init_set(Result.get(), workitem.get());
+                    Batch[i] = std::move(Result);
+                }
+            }
+
+            mpz_add_ui(workitem.get(), workitem.get(), Step);
+        }
+
+        if (Controller != nullptr)
+        {
+            Controller->BatchReportWork(Batch, i);
+        }
+        else
+        {
+            // Todo: write out to disk here if file path present
+            for (auto& mpz : Batch)
+            {
+                gmp_printf("%Zd\n", mpz.get());
+            }
         }
     }
-    else
-    {
-        // Todo: write out to disk here if file path present
-        gmp_printf("%Zd\n", result.get());
-    }
-
-    // Let the result go out of scope and get cleaned up.
 }
 
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
@@ -92,8 +113,7 @@ Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController)
     Controller(NetController),
     Candidates(Config.PrimeSettings.ThreadCount,
         std::bind(&Primebot::FindPrime, this, std::placeholders::_1, std::placeholders::_2)),
-    Results(Config.PrimeSettings.ThreadCount,
-        std::bind(&Primebot::FoundPrime, this, std::placeholders::_1, std::placeholders::_2))
+    Quit(false)
 {
 }
 
@@ -162,8 +182,8 @@ void Primebot::Start()
 
 void Primebot::Stop()
 {
+    Quit = true;
     Candidates.Stop();
-    Results.Stop();
     if (Controller != nullptr)
     {
         Controller->UnregisterClient();

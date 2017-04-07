@@ -60,10 +60,10 @@ Threadpool<T,C>::~Threadpool()
 template<class T,class C>
 inline void Threadpool<T,C>::Initialize()
 {
-	for (unsigned i = 0; i < ThreadCount; i++)
-	{
-		Threads.push_back(std::thread(std::bind(&Threadpool::ThreadFunc, this)));
-	}
+    for (unsigned i = 0; i < ThreadCount; i++)
+    {
+        Threads[i] = std::move(std::thread(&Threadpool::ThreadFunc, this));
+    }
 }
 
 template<class T,class C>

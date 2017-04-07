@@ -134,7 +134,7 @@ public:
     bool RegisterClient();
     unique_mpz RequestWork();
     bool ReportWork(__mpz_struct& WorkItem);
-    bool BatchReportWork(std::vector<unique_mpz>& WorkItems);
+    bool BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t count);
     bool BatchReportWork(std::vector<mpz_class>& WorkItems);
     void UnregisterClient();
     void ShutdownClients();

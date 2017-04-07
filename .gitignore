@@ -29,7 +29,7 @@
 *.app
 
 # Project files
-x64\*
+x64/*
 *.VC.db
 *.VC.opendb
-.vs\*
+.vs/*

@@ -230,5 +230,7 @@ PrimebotSettings::PrimebotSettings() :
     UseAsync(false),
     ThreadCount(std::thread::hardware_concurrency()),
     Bitsize(256),
-    RngSeed(1234)
+    RngSeed(1234),
+    BatchSize(1000),
+    BatchesToSend(-1)
 {}

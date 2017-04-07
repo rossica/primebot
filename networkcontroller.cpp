@@ -342,7 +342,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
     }
 }
 
-bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems)
+bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t Count = 0)
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
@@ -352,8 +352,13 @@ bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems)
     int NetSize;
     std::unique_ptr<char[]> Data;
 
+    if (Count == 0)
+    {
+        Count = WorkItems.size();
+    }
+
     Header.Type = NetworkMessageType::BatchReportWork;
-    Header.Size = htonl(WorkItems.size());
+    Header.Size = htonl(Count);
 
     // Send header with count of WorkItems
     Result = send(Socket, (char*)&Header, sizeof(Header), 0);
@@ -365,7 +370,7 @@ bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems)
         return false;
     }
 
-    for (int i = 0; i < WorkItems.size(); i++)
+    for (int i = 0; i < Count; i++)
     {
         Size = mpz_sizeinbase(WorkItems[i].get(), STRING_BASE) + 2;
         if (Size > LastSize)

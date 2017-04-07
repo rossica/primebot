@@ -47,6 +47,10 @@ struct PrimebotSettings
     unsigned int Bitsize;
     // Optional seed for the RNG to generate numbers to search
     unsigned int RngSeed;
+    // Count of primes in each batch sent to server
+    unsigned int BatchSize;
+    // Total count of batches to find and send
+    unsigned long long BatchesToSend;
 
     PrimebotSettings();
 };
