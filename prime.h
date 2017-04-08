@@ -39,6 +39,7 @@ public:
     ~Primebot();
 
     static mpz_class GenerateRandomOdd(unsigned int Bits, unsigned int Seed);
+    static std::vector<int> DecomposeToPowersOfTwo(mpz_class prime);
 
     void Start();
     void Stop();

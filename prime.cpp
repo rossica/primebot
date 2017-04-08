@@ -39,6 +39,33 @@ mpz_class Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
     return std::move(Work);
 }
 
+std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
+{
+    // Convert the prime into a nicer list of powers of two?
+    mpz_class Candidate(Input);
+    std::vector<int> Powers;
+    unsigned int Base = 2;
+    while (mpz_cmp_ui(Candidate.get_mpz_t(), 1) >= 0)
+    {
+        unsigned int Exp = mpz_sizeinbase(Candidate.get_mpz_t(), Base);
+        mpz_class Test(Base);
+        mpz_pow_ui(Test.get_mpz_t(), Test.get_mpz_t(), Exp);
+
+        while (mpz_cmp(Test.get_mpz_t(), Candidate.get_mpz_t()) > 0)
+        {
+            // if the test power is greater, decrement Exp
+            // and regenerate Test;
+            Test = Base;
+            Exp--;
+            mpz_pow_ui(Test.get_mpz_t(), Test.get_mpz_t(), Exp);
+        }
+
+        Candidate -= Test;
+        Powers.push_back(Exp);
+    }
+    return Powers;
+}
+
 void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
 {
     unsigned int Step = pool.GetThreadCount();
