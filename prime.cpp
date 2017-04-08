@@ -2,6 +2,7 @@
 #include "prime.h"
 #include "networkcontroller.h"
 #include "asyncPrimeSearching.h" 
+#include "fileio.h"
 #pragma warning( push )
 #pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
@@ -121,10 +122,20 @@ void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
         }
         else
         {
-            // Todo: write out to disk here if file path present
-            for (auto& mpz : Batch)
+            if (Settings.FileSettings.Path.empty())
             {
-                gmp_printf("%Zd\n", mpz.get_mpz_t());
+                for (auto& mpz : Batch)
+                {
+                    gmp_printf("%Zd\n", mpz.get_mpz_t());
+                }
+            }
+            else
+            {
+                // Todo: write out to disk here if file path present
+                for (auto& mpz : Batch)
+                {
+                    WritePrimeToFile(Settings.FileSettings.Path, mpz.get_str(62));
+                }
             }
         }
 

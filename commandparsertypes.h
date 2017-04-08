@@ -58,7 +58,6 @@ struct PrimebotSettings
 struct PrimeFileSettings
 {
     // Directory to store discovered prime numbers in
-    // If running as a server, subfolders will be by IP address
     std::string Path;
 };
 

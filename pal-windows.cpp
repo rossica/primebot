@@ -43,3 +43,46 @@ bool RegisterSignalHandler()
     }
     return true;
 }
+
+// Borrowed from the solution available here:
+// http://stackoverflow.com/questions/1530760/how-do-i-recursively-create-a-folder-in-win32
+bool MakeDirectory(const char* Path)
+{
+    char CurrentFolder[MAX_PATH] = { 0 };
+    const char* End = nullptr;
+
+    End = strchr(Path, '/');
+
+    while (End != nullptr)
+    {
+        strncpy_s(CurrentFolder, Path, End - Path + 1);
+        if (!CreateDirectory(CurrentFolder, nullptr))
+        {
+            DWORD Error = GetLastError();
+            if (Error != ERROR_ALREADY_EXISTS)
+            {
+                printf(
+                    "Failed to create directory %s with error %u",
+                    CurrentFolder,
+                    Error);
+                // Don't even try to delete partially-created directories.
+                return false;
+            }
+        }
+        End = strchr(++End, '/');
+    }
+
+    // Create last folder
+    if (!CreateDirectory(Path, nullptr))
+    {
+        if (GetLastError() != ERROR_ALREADY_EXISTS)
+        {
+            printf(
+                "Failed to create directory %s with error %u",
+                CurrentFolder,
+                GetLastError());
+            return false;
+        }
+    }
+    return true;
+}

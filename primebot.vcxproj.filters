@@ -36,6 +36,9 @@
     <ClCompile Include="asyncPrimeSearching.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="fileio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pal.h">
@@ -66,6 +69,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="primeSearchingUtilities.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="fileio.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

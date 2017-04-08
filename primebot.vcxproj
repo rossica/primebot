@@ -121,6 +121,7 @@
   <ItemGroup>
     <ClCompile Include="asyncPrimeSearching.cpp" />
     <ClCompile Include="commandparser.cpp" />
+    <ClCompile Include="fileio.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="networkcontroller.cpp" />
     <ClCompile Include="pal-windows.cpp" />
@@ -131,6 +132,7 @@
     <ClInclude Include="asyncPrimeSearching.h" />
     <ClInclude Include="commandparser.h" />
     <ClInclude Include="commandparsertypes.h" />
+    <ClInclude Include="fileio.h" />
     <ClInclude Include="networkcontroller.h" />
     <ClInclude Include="onelockthreadpool.h" />
     <ClInclude Include="pal.h" />
