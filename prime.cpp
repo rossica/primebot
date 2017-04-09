@@ -9,6 +9,8 @@
 #include "gmpxx.h" 
 #pragma warning( pop )
 
+std::atomic<int> Primebot::RandomIterations = 0;
+
 
 // Yeah this is kind of ugly, Old-C style.
 // Feel free to send a PR with a better way to do this.
@@ -26,6 +28,7 @@ mpz_class Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
     {
         gmp_randseed_ui(Rand, Seed);
         LastSeed = Seed;
+        RandomIterations = 0;
     }
 
     mpz_class Work;
@@ -37,7 +40,14 @@ mpz_class Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
         Work += 1;
     }
 
+    RandomIterations++;
+
     return std::move(Work);
+}
+
+int Primebot::GetRandomInterations()
+{
+    return RandomIterations;
 }
 
 std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
@@ -69,7 +79,7 @@ std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
 
 void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
 {
-    unsigned int Step = pool.GetThreadCount();
+    unsigned int Step = 2 * pool.GetThreadCount();
 
     for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchesToSend && !Quit; j++)
     {
@@ -122,19 +132,20 @@ void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
         }
         else
         {
-            if (Settings.FileSettings.Path.empty())
+            std::string PrimeBaseFilePath = GetPrimeBasePath(Settings);
+
+            for (auto& mpz : Batch)
             {
-                for (auto& mpz : Batch)
+                if (Settings.FileSettings.Path.empty())
                 {
                     gmp_printf("%Zd\n", mpz.get_mpz_t());
                 }
-            }
-            else
-            {
-                // Todo: write out to disk here if file path present
-                for (auto& mpz : Batch)
+                else
                 {
-                    WritePrimeToFile(Settings.FileSettings.Path, mpz.get_str(62));
+                    // Write out to disk if file path present
+                    WritePrimeToFile(
+                        PrimeBaseFilePath,
+                        mpz.get_str(STRING_BASE));
                 }
             }
         }
@@ -178,6 +189,7 @@ void Primebot::Start()
     }
     else
     {
+        // Stand-alone mode, generate starting prime
         Start = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
     }
 
@@ -186,20 +198,40 @@ void Primebot::Start()
         // Async implementation
         mpz_class AsyncStart(Start);
         mpz_class AsyncEnd(AsyncStart);
-        AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize;
-        auto Results = findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd);
 
-        // Use network to report results
-        if (Controller != nullptr)
+        for (unsigned long long i = 0; i < Settings.PrimeSettings.BatchesToSend; i++)
         {
-            Controller->BatchReportWork(Results);
-        }
-        else // print results to console
-        {
-            for (auto res : Results)
+            AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize;
+            auto Results = findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd);
+
+            // Use network to report results
+            if (Controller != nullptr)
             {
-                gmp_printf("%Zd\n", res.get_mpz_t());
+                Controller->BatchReportWork(Results);
             }
+            else
+            {
+                std::string PrimeBaseFilePath = GetPrimeBasePath(Settings);
+
+                for (auto& res : Results)
+                {
+                    if (Settings.FileSettings.Path.empty())
+                    {
+                        // print results to console
+                        gmp_printf("%Zd\n", res.get_mpz_t());
+                    }
+                    else
+                    {
+                        // Write out to disk here if file path present
+                        WritePrimeToFile(
+                            PrimeBaseFilePath,
+                            res.get_str(STRING_BASE));
+                    }
+                }
+            }
+
+            // Move the start to the end of the range
+            AsyncStart = AsyncEnd;
         }
     }
     else

@@ -22,6 +22,7 @@ typedef int NETSOCK;
 #define SD_SEND SHUT_WR
 #define closesocket close
 inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
+// remove this if linux ever implements memcpy_s
 #define memcpy_s(dest, destsz, src, srcsz) memcpy(dest, src, destsz)
 #endif
 #include <future>
@@ -34,27 +35,19 @@ inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 #define ReportError(Msg) std::cerr << strerror(errno) << " at " << __FUNCTION__ << Msg << std::endl
 #endif
 
-#define STRING_BASE (62)
-
-char* NetworkController::ReceivePrime(NETSOCK Socket, char* Data, int Size)
+std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, int Size)
 {
     NETSOCK Result;
     int ReceivedData = 0;
-    std::unique_ptr<char[]> TempData(nullptr);
 
     // yep, I'm allocating memory based on what a remote host tells me.
     // This is **VERY** INSECURE. Don't do it on networks that aren't secure.
     // We have very weak "authentication": only clients that have registered
     // with this server are allowed to send data.
-    if (Data == nullptr)
-    {
-        // Storing array in a unique_ptr to prevent leaks if this function crashes.
-        TempData.reset(new char[Size]);
-        Data = TempData.get();
-    }
+    std::unique_ptr<char[]> Data(new char[Size]);
 
     do {
-        Result = recv(Socket, Data + ReceivedData, Size - ReceivedData, 0);
+        Result = recv(Socket, Data.get() + ReceivedData, Size - ReceivedData, 0);
         if (!IsSocketValid(Result) || Result == 0)
         {
             ReportError(" failed recv");
@@ -64,7 +57,7 @@ char* NetworkController::ReceivePrime(NETSOCK Socket, char* Data, int Size)
 
     } while (IsSocketValid(Result) && Result > 0 && ReceivedData < Size);
 
-    return (TempData.get() != nullptr) ? TempData.release() : Data;
+    return std::move(Data);
 }
 
 bool NetworkController::SendPrime(NETSOCK Socket, const char const * Prime, int Size)
@@ -229,7 +222,7 @@ mpz_class NetworkController::RequestWork()
         return mpz_class();
     }
 
-    std::unique_ptr<char[]> Data(ReceivePrime(Socket, nullptr, Header.Size));
+    std::unique_ptr<char[]> Data(ReceivePrime(Socket, Header.Size));
 
     // Initialize the Workitem with the string returned from the server.
     mpz_class WorkItem(Data.get(), STRING_BASE);
@@ -269,13 +262,13 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     SendPrime(ClientSock.ClientSocket, Data.c_str(), Size);
 }
 
-bool NetworkController::ReportWork(__mpz_struct& WorkItem)
+bool NetworkController::ReportWork(mpz_class& WorkItem)
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
     bool Success;
     int SentData = 0;
-    size_t Size = mpz_sizeinbase(&WorkItem, STRING_BASE) + 2;
+    size_t Size = mpz_sizeinbase(WorkItem.get_mpz_t(), STRING_BASE) + 2;
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::ReportWork;
     Header.Size = htonl(Size);
@@ -289,13 +282,10 @@ bool NetworkController::ReportWork(__mpz_struct& WorkItem)
         return false;
     }
 
-    // Using this instead of mpz_class::get_str because that
-    // appears to have a memory leak.
-    std::unique_ptr<char[]> Data(new char[Size]);
-    mpz_get_str(Data.get(), STRING_BASE, &WorkItem);
+    std::string Data = WorkItem.get_str(STRING_BASE);
 
     // Send data now
-    Success = SendPrime(Socket, Data.get(), Size);
+    Success = SendPrime(Socket, Data.c_str(), Size);
 
     shutdown(Socket, SD_SEND);
     closesocket(Socket);
@@ -313,7 +303,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
         return;
     }
 
-    std::unique_ptr<char[]> Data(ReceivePrime(ClientSock.ClientSocket, nullptr, Size));
+    std::unique_ptr<char[]> Data(ReceivePrime(ClientSock.ClientSocket, Size));
 
     if (Data == nullptr)
     {
@@ -330,11 +320,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
     }
     else
     {
-        unique_mpz Work(new __mpz_struct);
-        mpz_init_set_str(Work.get(), Data.get(), STRING_BASE);
-
-        //std::cout << mpz_get_ui(Work.get()) << std::endl;
-        gmp_printf("%Zd\n", Work.get());
+        PendingIo.EnqueueWorkItem({ "", std::move(Data) });
     }
 }
 
@@ -462,7 +448,6 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
 {
     NETSOCK Result;
     int Size;
-    int LastSize = 0; // Size of previous allocation
     std::unique_ptr<char[]> Data;
 
     // Only receiving data here
@@ -480,32 +465,17 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
 
         Size = ntohl(Size);
 
-        // Optimization to prevent many memory allocations
-        if (Size > LastSize)
-        {
-            Data.reset(ReceivePrime(ClientSock.ClientSocket, nullptr, Size));
-            LastSize = Size;
+        Data = ReceivePrime(ClientSock.ClientSocket, Size);
 
-            if (Data.get() == nullptr)
-            {
-                ReportError(" recv prime " + std::to_string(i));
-                return;
-            }
-        }
-        else
+        if (Data.get() == nullptr)
         {
-            memset(Data.get(), 0, LastSize); // Assumption: zeroing out memory is faster than malloc()
-            if (ReceivePrime(ClientSock.ClientSocket, Data.get(), Size) == nullptr)
-            {
-                ReportError(" recv prime " + std::to_string(i));
-                return;
-            }
+            ReportError(" recv prime " + std::to_string(i));
+            return;
         }
 
-
-        // Consider a threadpool to actually handle the file IO, since
-        // that may be slow. The server should have enough memory to hold
-        // all the data until it is written out.
+        // Enqueue work to a threadpool to actually handle the file IO, since
+        // that may be slow. The server should have enough memory to hold all
+        // the data until it is written out.
         if (!Settings.FileSettings.Path.empty())
         {
             // TODO
@@ -515,11 +485,7 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
         }
         else
         {
-            unique_mpz Work(new __mpz_struct);
-            mpz_init_set_str(Work.get(), Data.get(), STRING_BASE);
-
-            //std::cout << mpz_get_ui(Work.get()) << std::endl;
-            gmp_printf("%Zd\n", Work.get());
+            PendingIo.EnqueueWorkItem({ "", std::move(Data) });
         }
     }
 }
@@ -584,6 +550,9 @@ void NetworkController::ShutdownClients()
         // send shutdown message
         send(Socket, (char*)&Header, sizeof(Header), 0);
 
+        // TODO: wait for client to send UnregisterClient message, which
+        // is only sent after all unsent work is sent?
+        shutdown(Socket, SD_SEND);
         closesocket(Socket);
     }
 }
@@ -594,6 +563,21 @@ void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
         (ServerSock.IPv6.sin6_family == AF_INET6) && (memcmp(&Settings.NetworkSettings.IPv6, &ServerSock.IPv6, sizeof(Settings.NetworkSettings.IPv6)) == 0))
     {
         Bot->Stop();
+    }
+}
+
+void NetworkController::ProcessIO(decltype(PendingIo)& pool, ControllerIoInfo Info)
+{
+    if (Info.Path.empty())
+    {
+        mpz_class Work(Info.Data.get(), STRING_BASE);
+
+        //std::cout << Work << std::endl; // linker error on windows
+        gmp_printf("%Zd\n", Work.get_mpz_t());
+    }
+    else
+    {
+
     }
 }
 
@@ -609,7 +593,7 @@ void NetworkController::ListenLoop()
         ConnInfo.ClientSocket = accept(ListenSocket, (sockaddr*)&ConnInfo.IPv6, &ConnInfoAddrSize);
 
         // Let the thread handle whether the socket is valid or not.
-        //std::async(&NetworkController::HandleRequest, this, std::move(ConnInfo));
+        //std::async(&NetworkController::HandleRequest, this, std::move(ConnInfo)); // potentially thousands of threads
         OutstandingConnections.EnqueueWorkItem(std::move(ConnInfo));
     }
 }
@@ -731,6 +715,9 @@ NetworkController::NetworkController(AllPrimebotSettings Config) :
     CompleteConnections(
         std::thread::hardware_concurrency(),
         std::bind(&NetworkController::CleanupRequest, this, std::placeholders::_1, std::placeholders::_2)),
+    PendingIo(
+        1, // TODO: make IO Threads configurable
+        std::bind(&NetworkController::ProcessIO, this, std::placeholders::_1, std::placeholders::_2)),
     ListenSocket(INVALID_SOCKET),
     Bot(nullptr)
 {
@@ -744,9 +731,10 @@ NetworkController::NetworkController(AllPrimebotSettings Config) :
 
     if (!Settings.NetworkSettings.Server)
     {
-        // Threadpool unused on client, so kill it
+        // Threadpools unused on client, so stop them to free resources
         OutstandingConnections.Stop();
         CompleteConnections.Stop();
+        PendingIo.Stop();
     }
 }
 
@@ -765,6 +753,7 @@ NetworkController::~NetworkController()
     {
         OutstandingConnections.Stop();
         CompleteConnections.Stop();
+        PendingIo.Stop();
     }
 }
 

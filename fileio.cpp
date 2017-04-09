@@ -1,9 +1,23 @@
 #include "fileio.h"
 #include "pal.h"
+#include "prime.h"
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <functional>
+
+std::string GetPrimeBasePath(AllPrimebotSettings Settings)
+{
+    return
+        std::string(Settings.FileSettings.Path
+            + "/"
+            + std::to_string(Settings.PrimeSettings.Bitsize)
+            + "-"
+            + std::to_string(Settings.PrimeSettings.RngSeed)
+            + "-"
+            + std::to_string(Primebot::GetRandomInterations()));
+}
 
 bool WritePrimeToFile(std::string BasePath, std::string Prime)
 {
@@ -18,8 +32,8 @@ bool WritePrimeToFile(std::string BasePath, std::string Prime)
     std::stringstream PathStream;
     PathStream
         << BasePath
-        << '/' << std::hex << (int) HashPtr[sizeof(Hash)-1]
-        << '/' << std::hex << (int) HashPtr[sizeof(Hash)-2];
+        << '/' << std::hex << std::setw(2) << std::setfill('0') << (int) HashPtr[sizeof(Hash)-1]
+        << '/' << std::hex << std::setw(2) << std::setfill('0') << (int) HashPtr[sizeof(Hash)-2];
 
     Result = MakeDirectory(PathStream.str().c_str());
     if (!Result)
@@ -27,16 +41,16 @@ bool WritePrimeToFile(std::string BasePath, std::string Prime)
         return Result;
     }
 
-    PathStream << '/' << std::hex << Hash << ".txt";
+    PathStream << '/' << std::hex << std::setw(sizeof(Hash)*2) << std::setfill('0') << Hash << ".txt";
 
-    std::ofstream File(PathStream.str());
+    std::ofstream File(PathStream.str(), std::ios::app);
     if (!File.is_open())
     {
         std::cout << "Failed to open file" << std::endl;
         return false;
     }
 
-    File << Prime;
+    File << Prime << "\n";
     File.close();
-    return true;
+    return !File.fail();
 }

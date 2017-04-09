@@ -22,6 +22,7 @@ typedef int NETSOCK;
 #include "commandparsertypes.h"
 
 #define CLIENT_PORT (htons(60001))
+#define STRING_BASE (62)
 
 struct NetworkConnectionInfo
 {
@@ -91,18 +92,33 @@ union AddressType
 
 inline bool operator<(const AddressType& Left, const AddressType& Right);
 
+struct NetworkClientInfo
+{
+    AddressType ClientAddress;
+    unsigned int Seed;
+    unsigned int Bitsize;
+    int RandomInteration;
+};
+
+struct ControllerIoInfo
+{
+    std::string Path;
+    std::unique_ptr<char[]> Data;
+};
+
 class NetworkController
 {
 private:
     AllPrimebotSettings Settings;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> CompleteConnections;
+    Threadpool<ControllerIoInfo, std::list<ControllerIoInfo>> PendingIo;
     std::set<AddressType> Clients;
     NETSOCK ListenSocket;
     Primebot* Bot;
 
     // helper functions
-    char* ReceivePrime(NETSOCK Socket, char* Data, int Size);
+    std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, int Size);
     bool SendPrime(NETSOCK Socket, const char const * Prime, int Size);
 
     // handles incoming requests, for client and server
@@ -116,6 +132,9 @@ private:
     void HandleShutdownClient(NetworkConnectionInfo& ServerSock);
 
     void CleanupRequest(decltype(CompleteConnections)& pool, NetworkConnectionInfo ClientSock);
+
+    // Handle IO
+    void ProcessIO(decltype(PendingIo)& pool, ControllerIoInfo Info);
 
     void ListenLoop();
     void ClientBind();
@@ -133,7 +152,7 @@ public:
 
     bool RegisterClient();
     mpz_class RequestWork();
-    bool ReportWork(__mpz_struct& WorkItem);
+    bool ReportWork(mpz_class& WorkItem);
     bool BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t count = 0);
     bool BatchReportWork(std::vector<mpz_class>& WorkItems);
     void UnregisterClient();

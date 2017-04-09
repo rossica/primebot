@@ -5,6 +5,9 @@
 #include "gmpxx.h"
 #pragma warning( pop )
 #include <string>
+#include "commandparsertypes.h"
+
+std::string GetPrimeBasePath(AllPrimebotSettings Settings);
 
 bool WritePrimeToFile(std::string BasePath, std::string Prime);
 

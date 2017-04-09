@@ -33,12 +33,14 @@ private:
     AllPrimebotSettings Settings;
     void FindPrime(decltype(Candidates)& pool, mpz_class&& workitem);
     std::atomic<bool> Quit;
+    static std::atomic<int> RandomIterations;
 public:
     Primebot() = delete;
     Primebot(AllPrimebotSettings config, NetworkController* NetController);
     ~Primebot();
 
     static mpz_class GenerateRandomOdd(unsigned int Bits, unsigned int Seed);
+    static int GetRandomInterations();
     static std::vector<int> DecomposeToPowersOfTwo(mpz_class prime);
 
     void Start();
