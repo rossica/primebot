@@ -10,13 +10,13 @@
 std::string GetPrimeBasePath(AllPrimebotSettings Settings, int Iterations)
 {
     return
-        std::string(Settings.FileSettings.Path
+        Settings.FileSettings.Path
             + "/"
             + std::to_string(Settings.PrimeSettings.Bitsize)
             + "-"
             + std::to_string(Settings.PrimeSettings.RngSeed)
             + "-"
-            + std::to_string(Iterations));
+            + std::to_string(Iterations);
 }
 
 bool WritePrimeToFile(std::string BasePath, std::string Prime)

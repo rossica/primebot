@@ -123,32 +123,36 @@ void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
             workitem += Step;
         }
 
-        if (Controller != nullptr)
-        {
-            Controller->BatchReportWork(Batch);
-        }
-        else
-        {
-            // Assumption: RandomIterations won't change from 1 in this path.
-            std::string PrimeBaseFilePath = GetPrimeBasePath(Settings, RandomIterations);
-
-            for (auto& mpz : Batch)
-            {
-                if (Settings.FileSettings.Path.empty())
-                {
-                    gmp_printf("%Zd\n", mpz.get_mpz_t());
-                }
-                else
-                {
-                    // Write out to disk if file path present
-                    WritePrimeToFile(
-                        PrimeBaseFilePath,
-                        mpz.get_str(STRING_BASE));
-                }
-            }
-        }
+        ProcessOrReportResults(Batch);
 
         Batch.clear();
+    }
+}
+
+void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
+{
+    // Use network to report results
+    if (Controller != nullptr)
+    {
+        Controller->BatchReportWork(Results);
+    }
+    else
+    {
+        for (auto& res : Results)
+        {
+            if (Settings.FileSettings.Path.empty())
+            {
+                // print results to console
+                gmp_printf("%Zd\n", res.get_mpz_t());
+            }
+            else
+            {
+                // Write out to disk here if file path present
+                WritePrimeToFile(
+                    Settings.FileSettings.Path,
+                    res.get_str(STRING_BASE));
+            }
+        }
     }
 }
 
@@ -169,10 +173,12 @@ Primebot::~Primebot()
 void Primebot::Start()
 {
     mpz_class Start;
-    int RngIteration;
 
     if (Controller != nullptr)
     {
+        // Start listening for events from the server
+        Controller->Start();
+
         while (!Controller->RegisterClient())
         {
             // Failed to register client, try again
@@ -192,7 +198,12 @@ void Primebot::Start()
         // Stand-alone mode, generate starting prime
         auto RandomWork = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
         Start = RandomWork.first;
-        RngIteration = RandomWork.second;
+
+        // Update the path setting only if it's specified.
+        if (!Settings.FileSettings.Path.empty())
+        {
+            Settings.FileSettings.Path = GetPrimeBasePath(Settings, RandomWork.second);
+        }
     }
 
     if (Settings.PrimeSettings.UseAsync)
@@ -200,15 +211,17 @@ void Primebot::Start()
         // Async implementation
         mpz_class AsyncStart(Start);
         mpz_class AsyncEnd(AsyncStart);
+        // Not using the threadpool, so stop it.
+        Candidates.Stop();
 
         for (unsigned long long i = 0; i < Settings.PrimeSettings.BatchCount; i++)
         {
             std::vector<mpz_class> Results;
-            while (Results.size() > Settings.PrimeSettings.BatchSize)
+            while (Results.size() < Settings.PrimeSettings.BatchSize * Settings.PrimeSettings.ThreadCount)
             {
-                AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize;
+                AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize * 1000;
 
-                concatenate(
+                Results = concatenate(
                     Results,
                     findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd));
 
@@ -216,32 +229,7 @@ void Primebot::Start()
                 AsyncStart = AsyncEnd;
             }
 
-            // Use network to report results
-            if (Controller != nullptr)
-            {
-                Controller->BatchReportWork(Results);
-            }
-            else
-            {
-                std::string PrimeBaseFilePath = GetPrimeBasePath(Settings, RngIteration);
-
-                for (auto& res : Results)
-                {
-                    if (Settings.FileSettings.Path.empty())
-                    {
-                        // print results to console
-                        gmp_printf("%Zd\n", res.get_mpz_t());
-                    }
-                    else
-                    {
-                        // Write out to disk here if file path present
-                        WritePrimeToFile(
-                            PrimeBaseFilePath,
-                            res.get_str(STRING_BASE));
-                    }
-                }
-            }
-            Results.clear();
+            ProcessOrReportResults(Results);
         }
     }
     else

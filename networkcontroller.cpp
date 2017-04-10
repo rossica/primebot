@@ -615,8 +615,13 @@ void NetworkController::ListenLoop()
 
         ConnInfo.ClientSocket = accept(ListenSocket, (sockaddr*)&ConnInfo.IPv6, &ConnInfoAddrSize);
 
-        // Let the thread handle whether the socket is valid or not.
-        //std::async(&NetworkController::HandleRequest, this, std::move(ConnInfo)); // potentially thousands of threads
+        if (!IsSocketValid(ConnInfo.ClientSocket))
+        {
+            ReportError(" accepting connection failed");
+            continue;
+        }
+
+        //std::thread(&NetworkController::HandleRequest, this, std::move(ConnInfo)).detach(); // potentially thousands of threads
         OutstandingConnections.EnqueueWorkItem(std::move(ConnInfo));
     }
 }
@@ -628,6 +633,7 @@ void NetworkController::ClientBind()
     // match IP family and port number of server, because I'm lazy
     if (Settings.NetworkSettings.IPv4.sin_family == AF_INET)
     {
+        ClientAny.IPv4.sin_family = AF_INET;
         ClientAny.IPv4.sin_port = CLIENT_PORT;//Settings.IPv4.sin_port;
         if (!IsSocketValid(
                 bind(
@@ -640,6 +646,7 @@ void NetworkController::ClientBind()
     }
     else
     {
+        ClientAny.IPv6.sin6_family = AF_INET6;
         ClientAny.IPv6.sin6_port = CLIENT_PORT;//Settings.IPv6.sin6_port;
 
         if (!IsSocketValid(
@@ -733,7 +740,7 @@ NETSOCK NetworkController::GetSocketToServer()
 NetworkController::NetworkController(AllPrimebotSettings Config) :
     Settings(Config),
     OutstandingConnections(
-        2 * std::thread::hardware_concurrency(),
+        std::thread::hardware_concurrency(),
         std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1, std::placeholders::_2)),
     CompleteConnections(
         std::thread::hardware_concurrency(),
@@ -818,7 +825,7 @@ void NetworkController::Start()
     {
         // On the other hand, clients need to do other things, so run this
         // loop in a never-returning thread.
-        std::async(std::bind(&NetworkController::ListenLoop, this));
+        std::thread(&NetworkController::ListenLoop, this).detach();
     }
 }
 

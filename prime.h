@@ -34,6 +34,8 @@ private:
     void FindPrime(decltype(Candidates)& pool, mpz_class&& workitem);
     std::atomic<bool> Quit;
     static std::atomic<int> RandomIterations;
+
+    void ProcessOrReportResults(std::vector<mpz_class>& Results);
 public:
     Primebot() = delete;
     Primebot(AllPrimebotSettings config, NetworkController* NetController);

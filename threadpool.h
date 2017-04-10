@@ -48,7 +48,7 @@ Threadpool<T,C>::Threadpool(unsigned int ThreadCount, std::function<void(Threadp
     ProcessWorkItem(std::move(ProcessWorkitemFunc)),
     Threads(ThreadCount)
 {
-	Initialize();
+    Initialize();
 }
 
 template<class T,class C>
@@ -89,9 +89,10 @@ inline void Threadpool<T,C>::Stop()
     }
     WorkItemsLock.unlock();
 
+    Stopped = true;
+
     {
         std::unique_lock<std::recursive_mutex> lock(WaitLock);
-        Stopped = true;
         WaitVariable.notify_all();
     }
 
@@ -131,7 +132,7 @@ inline void Threadpool<T,C>::ThreadFunc()
 		{
 			std::unique_lock<std::recursive_mutex> lock(WaitLock);
 			// Wait for work to do/wait to exit
-            WaitVariable.wait_for(lock, std::chrono::seconds(2));
+            WaitVariable.wait(lock, [this] () -> bool { return (WorkItems.size() > 0) || Stopped; });
 		}
 
         // check WorkItems, and process a workitem
