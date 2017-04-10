@@ -7,7 +7,7 @@
 #include <sstream>
 #include <functional>
 
-std::string GetPrimeBasePath(AllPrimebotSettings Settings)
+std::string GetPrimeBasePath(AllPrimebotSettings Settings, int Iterations)
 {
     return
         std::string(Settings.FileSettings.Path
@@ -16,7 +16,7 @@ std::string GetPrimeBasePath(AllPrimebotSettings Settings)
             + "-"
             + std::to_string(Settings.PrimeSettings.RngSeed)
             + "-"
-            + std::to_string(Primebot::GetRandomInterations()));
+            + std::to_string(Iterations));
 }
 
 bool WritePrimeToFile(std::string BasePath, std::string Prime)

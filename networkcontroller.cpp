@@ -1,4 +1,5 @@
 #include "networkcontroller.h"
+#include "fileio.h"
 // Cross-platform development, here we come...
 #if defined(_WIN32) || defined(_WIN64)
 #define NOMINMAX
@@ -80,6 +81,17 @@ bool NetworkController::SendPrime(NETSOCK Socket, const char const * Prime, int 
     return true;
 }
 
+std::string NetworkController::GetPrimeBasePath(NetworkClientInfo & ClientInfo)
+{
+    AllPrimebotSettings Dummy;
+
+    Dummy.FileSettings.Path = Settings.FileSettings.Path;
+    Dummy.PrimeSettings.RngSeed = ClientInfo.Seed;
+    Dummy.PrimeSettings.Bitsize = ClientInfo.Bitsize;
+
+    return ::GetPrimeBasePath(Dummy, ClientInfo.RandomInteration);
+}
+
 void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, NetworkConnectionInfo ClientSock)
 {
     if (!IsSocketValid(ClientSock.ClientSocket))
@@ -98,31 +110,40 @@ void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, Ne
 
     Header.Size = ntohl(Header.Size);
 
+    auto Client = Clients.find(ClientSock.IPv6);
+
     switch (Header.Type)
     {
     case NetworkMessageType::RegisterClient:
-        HandleRegisterClient(ClientSock);
+        if (Clients.find(ClientSock.IPv6) == Clients.end())
+        {
+            HandleRegisterClient(ClientSock);
+        }
+        else
+        {
+            ReportError(" Client tried to register more than once");
+        }
         break;
     case NetworkMessageType::RequestWork:
-        if (Clients.find(ClientSock.IPv6) != Clients.end())
+        if (Client != Clients.end())
         {
-            HandleRequestWork(ClientSock);
+            HandleRequestWork(ClientSock, Client->second);
         }
         break;
     case NetworkMessageType::ReportWork:
-        if (Clients.find(ClientSock.IPv6) != Clients.end())
+        if (Client != Clients.end())
         {
-            HandleReportWork(ClientSock, Header.Size);
+            HandleReportWork(ClientSock, Header.Size, Client->second);
         }
         break;
     case NetworkMessageType::BatchReportWork:
-        if (Clients.find(ClientSock.IPv6) != Clients.end())
+        if (Client != Clients.end())
         {
-            HandleBatchReportWork(ClientSock, Header.Size);
+            HandleBatchReportWork(ClientSock, Header.Size, Client->second);
         }
         break;
     case NetworkMessageType::UnregisterClient:
-        if (Clients.find(ClientSock.IPv6) != Clients.end())
+        if (Client != Clients.end())
         {
             HandleUnregisterClient(ClientSock);
         }
@@ -168,7 +189,7 @@ bool NetworkController::RegisterClient()
 void NetworkController::HandleRegisterClient(NetworkConnectionInfo& ClientSock)
 {
     // This should also copy the IPv4 data if it's only IPv4.
-    Clients.insert(ClientSock.IPv6);
+    Clients.insert(std::make_pair<AddressType, NetworkClientInfo>(ClientSock.IPv6, {}));
 
     std::cout << "Registered client: ";
     if (ClientSock.IPv4.sin_family == AF_INET)
@@ -232,7 +253,7 @@ mpz_class NetworkController::RequestWork()
     return std::move(WorkItem);
 }
 
-void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
+void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, NetworkClientInfo& ClientInfo)
 {
     NetworkHeader Header = { 0 };
     size_t Size;
@@ -240,7 +261,12 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock)
     NETSOCK Result;
 
     // Generate prime number to send to client
-    mpz_class Work(Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed));
+    auto RandomInfo = Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
+    mpz_class Work(RandomInfo.first);
+
+    ClientInfo.RandomInteration = RandomInfo.second;
+    ClientInfo.Bitsize = Settings.PrimeSettings.Bitsize;
+    ClientInfo.Seed = Settings.PrimeSettings.RngSeed;
 
     Size = mpz_sizeinbase(Work.get_mpz_t(), STRING_BASE) + 2;
 
@@ -292,7 +318,7 @@ bool NetworkController::ReportWork(mpz_class& WorkItem)
     return Success;
 }
 
-void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int Size)
+void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int Size, NetworkClientInfo& ClientInfo)
 {
     // Not sending any data on this socket, so shutdown send
     shutdown(ClientSock.ClientSocket, SD_SEND);
@@ -313,10 +339,8 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
 
     if (!Settings.FileSettings.Path.empty())
     {
-        // TODO
-        // open a file handle of the path:
-        // c:\path\passed\in\<ipaddress>\<power-of-2>.txt
         // write Data to file
+        PendingIo.EnqueueWorkItem({ GetPrimeBasePath(ClientInfo), std::move(Data) });
     }
     else
     {
@@ -444,7 +468,7 @@ bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
     return true;
 }
 
-void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count)
+void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count, NetworkClientInfo& ClientInfo)
 {
     NETSOCK Result;
     int Size;
@@ -478,10 +502,8 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
         // the data until it is written out.
         if (!Settings.FileSettings.Path.empty())
         {
-            // TODO
-            // open a file handle of the path:
-            // c:\path\passed\in\<ipaddress>\<power-of-2>.txt
             // write Data to file
+            PendingIo.EnqueueWorkItem({ GetPrimeBasePath(ClientInfo), std::move(Data) });
         }
         else
         {
@@ -532,20 +554,21 @@ void NetworkController::ShutdownClients()
     NetworkHeader Header = { NetworkMessageType::ShutdownClient, 0 };
 
     // for each client
-    for (AddressType client : Clients)
+    for (auto client : Clients)
     {
+        AddressType addr = client.first;
         // add back the client's port
-        if (client.IPv4.sin_family == AF_INET)
+        if (addr.IPv4.sin_family == AF_INET)
         {
-            client.IPv4.sin_port = CLIENT_PORT;
+            addr.IPv4.sin_port = CLIENT_PORT;
         }
         else
         {
-            client.IPv6.sin6_port = CLIENT_PORT;
+            addr.IPv6.sin6_port = CLIENT_PORT;
         }
 
         // open a socket to the client
-        NETSOCK Socket = GetSocketTo(client.IPv6);
+        NETSOCK Socket = GetSocketTo(addr.IPv6);
 
         // send shutdown message
         send(Socket, (char*)&Header, sizeof(Header), 0);
@@ -577,7 +600,7 @@ void NetworkController::ProcessIO(decltype(PendingIo)& pool, ControllerIoInfo In
     }
     else
     {
-
+        WritePrimeToFile(Info.Path, Info.Data.get());
     }
 }
 

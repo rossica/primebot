@@ -15,7 +15,7 @@ typedef int NETSOCK;
 #endif
 
 #include <memory>
-#include <set>
+#include <map>
 #include <list>
 #include "threadpool.h"
 #include "prime.h"
@@ -58,10 +58,13 @@ enum NetworkMessageType
     ShutdownClient // 0 size, server initiated message
 };
 
-union AddressType
+struct AddressType
 {
-    sockaddr_in IPv4;
-    sockaddr_in6 IPv6;
+    union
+    {
+        sockaddr_in IPv4;
+        sockaddr_in6 IPv6;
+    };
 
     AddressType(sockaddr_in6& ip6)
     {
@@ -94,7 +97,6 @@ inline bool operator<(const AddressType& Left, const AddressType& Right);
 
 struct NetworkClientInfo
 {
-    AddressType ClientAddress;
     unsigned int Seed;
     unsigned int Bitsize;
     int RandomInteration;
@@ -113,21 +115,22 @@ private:
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> CompleteConnections;
     Threadpool<ControllerIoInfo, std::list<ControllerIoInfo>> PendingIo;
-    std::set<AddressType> Clients;
+    std::map<AddressType, NetworkClientInfo> Clients;
     NETSOCK ListenSocket;
     Primebot* Bot;
 
     // helper functions
     std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, int Size);
     bool SendPrime(NETSOCK Socket, const char const * Prime, int Size);
+    std::string GetPrimeBasePath(NetworkClientInfo& ClientInfo);
 
     // handles incoming requests, for client and server
     void HandleRequest(decltype(OutstandingConnections)& pool, NetworkConnectionInfo ClientSock);
 
     void HandleRegisterClient(NetworkConnectionInfo& ClientSock);
-    void HandleRequestWork(NetworkConnectionInfo& ClientSock);
-    void HandleReportWork(NetworkConnectionInfo& ClientSock, int Size);
-    void HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count);
+    void HandleRequestWork(NetworkConnectionInfo& ClientSock, NetworkClientInfo& ClientInfo);
+    void HandleReportWork(NetworkConnectionInfo& ClientSock, int Size, NetworkClientInfo& ClientInfo);
+    void HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count, NetworkClientInfo& ClientInfo);
     void HandleUnregisterClient(NetworkConnectionInfo& ClientSock);
     void HandleShutdownClient(NetworkConnectionInfo& ServerSock);
 

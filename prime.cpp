@@ -2,6 +2,7 @@
 #include "prime.h"
 #include "networkcontroller.h"
 #include "asyncPrimeSearching.h" 
+#include "primeSearchingUtilities.h"
 #include "fileio.h"
 #pragma warning( push )
 #pragma warning( disable: 4146 )
@@ -15,10 +16,11 @@ std::atomic<int> Primebot::RandomIterations = 0;
 // Yeah this is kind of ugly, Old-C style.
 // Feel free to send a PR with a better way to do this.
 // Maybe a Generator?
-mpz_class Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
+std::pair<mpz_class, int> Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
 {
     static gmp_randstate_t Rand = { 0 };
     static unsigned int LastSeed = 0;
+    int PreviousIteration;
     if (Rand[0]._mp_algdata._mp_lc == nullptr) // does this even work?
     {
         gmp_randinit_mt(Rand);
@@ -35,19 +37,14 @@ mpz_class Primebot::GenerateRandomOdd(unsigned int Bits, unsigned int Seed)
     //mpz_init_set_ui(Work.get(), 1);
     mpz_urandomb(Work.get_mpz_t(), Rand, Bits);
 
+    PreviousIteration = RandomIterations.fetch_add(1);
+
     if (mpz_even_p(Work.get_mpz_t()))
     {
         Work += 1;
     }
 
-    RandomIterations++;
-
-    return std::move(Work);
-}
-
-int Primebot::GetRandomInterations()
-{
-    return RandomIterations;
+    return std::make_pair(std::move(Work), PreviousIteration + 1);
 }
 
 std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
@@ -81,7 +78,7 @@ void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
 {
     unsigned int Step = 2 * pool.GetThreadCount();
 
-    for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchesToSend && !Quit; j++)
+    for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchCount && !Quit; j++)
     {
         std::vector<mpz_class> Batch;
 
@@ -132,7 +129,8 @@ void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
         }
         else
         {
-            std::string PrimeBaseFilePath = GetPrimeBasePath(Settings);
+            // Assumption: RandomIterations won't change from 1 in this path.
+            std::string PrimeBaseFilePath = GetPrimeBasePath(Settings, RandomIterations);
 
             for (auto& mpz : Batch)
             {
@@ -165,11 +163,13 @@ Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController)
 
 Primebot::~Primebot()
 {
+    Stop();
 }
 
 void Primebot::Start()
 {
     mpz_class Start;
+    int RngIteration;
 
     if (Controller != nullptr)
     {
@@ -190,7 +190,9 @@ void Primebot::Start()
     else
     {
         // Stand-alone mode, generate starting prime
-        Start = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
+        auto RandomWork = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
+        Start = RandomWork.first;
+        RngIteration = RandomWork.second;
     }
 
     if (Settings.PrimeSettings.UseAsync)
@@ -199,10 +201,20 @@ void Primebot::Start()
         mpz_class AsyncStart(Start);
         mpz_class AsyncEnd(AsyncStart);
 
-        for (unsigned long long i = 0; i < Settings.PrimeSettings.BatchesToSend; i++)
+        for (unsigned long long i = 0; i < Settings.PrimeSettings.BatchCount; i++)
         {
-            AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize;
-            auto Results = findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd);
+            std::vector<mpz_class> Results;
+            while (Results.size() > Settings.PrimeSettings.BatchSize)
+            {
+                AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize;
+
+                concatenate(
+                    Results,
+                    findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd));
+
+                // Move the start to the end of the range
+                AsyncStart = AsyncEnd;
+            }
 
             // Use network to report results
             if (Controller != nullptr)
@@ -211,7 +223,7 @@ void Primebot::Start()
             }
             else
             {
-                std::string PrimeBaseFilePath = GetPrimeBasePath(Settings);
+                std::string PrimeBaseFilePath = GetPrimeBasePath(Settings, RngIteration);
 
                 for (auto& res : Results)
                 {
@@ -229,9 +241,7 @@ void Primebot::Start()
                     }
                 }
             }
-
-            // Move the start to the end of the range
-            AsyncStart = AsyncEnd;
+            Results.clear();
         }
     }
     else

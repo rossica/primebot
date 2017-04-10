@@ -7,7 +7,7 @@
 #include <string>
 #include "commandparsertypes.h"
 
-std::string GetPrimeBasePath(AllPrimebotSettings Settings);
+std::string GetPrimeBasePath(AllPrimebotSettings Settings, int Iterations);
 
 bool WritePrimeToFile(std::string BasePath, std::string Prime);
 
