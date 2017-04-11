@@ -28,6 +28,7 @@ inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 #endif
 #include <future>
 #include <iostream>
+#include <sstream>
 
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -110,12 +111,12 @@ void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, Ne
 
     Header.Size = ntohl(Header.Size);
 
-    auto Client = Clients.find(ClientSock.IPv6);
+    auto Client = Clients.find(ClientSock.addr.IPv6);
 
     switch (Header.Type)
     {
     case NetworkMessageType::RegisterClient:
-        if (Clients.find(ClientSock.IPv6) == Clients.end())
+        if (Clients.find(ClientSock.addr.IPv6) == Clients.end())
         {
             HandleRegisterClient(ClientSock);
         }
@@ -158,14 +159,14 @@ void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, Ne
         return;
     }
     
-    //// When finished, close the client socket
-    shutdown(ClientSock.ClientSocket, SD_BOTH);
+    //// Queue the client socket to be shutdown and closed asynchronously
     CompleteConnections.EnqueueWorkItem(std::move(ClientSock));
 }
 
 void NetworkController::CleanupRequest(decltype(CompleteConnections)& pool, NetworkConnectionInfo ClientSock)
 {
     // When finished, close the client socket
+    shutdown(ClientSock.ClientSocket, SD_BOTH);
     closesocket(ClientSock.ClientSocket);
 }
 
@@ -189,23 +190,9 @@ bool NetworkController::RegisterClient()
 void NetworkController::HandleRegisterClient(NetworkConnectionInfo& ClientSock)
 {
     // This should also copy the IPv4 data if it's only IPv4.
-    Clients.insert(std::make_pair<AddressType, NetworkClientInfo>(ClientSock.IPv6, {}));
+    Clients.insert(std::make_pair<AddressType, NetworkClientInfo>(ClientSock.addr.IPv6, {}));
 
-    std::cout << "Registered client: ";
-    if (ClientSock.IPv4.sin_family == AF_INET)
-    {
-        std::cout << std::hex << ntohl(ClientSock.IPv4.sin_addr.s_addr);
-    }
-    else
-    {
-        for (unsigned char* idx = std::begin(ClientSock.IPv6.sin6_addr.u.Byte);
-            idx < std::end(ClientSock.IPv6.sin6_addr.u.Byte);
-            idx++)
-        {
-            std::cout << std::hex << idx;
-        }
-    }
-    std::cout << std::endl;
+    std::cout << "Registered client: " << ClientSock.addr.ToString() << std::endl;
 }
 
 mpz_class NetworkController::RequestWork()
@@ -525,33 +512,20 @@ void NetworkController::UnregisterClient()
 
 void NetworkController::HandleUnregisterClient(NetworkConnectionInfo& ClientSock)
 {
-    Clients.erase(ClientSock.IPv6);
+    Clients.erase(ClientSock.addr);
 
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::ShutdownClient;
 
     send(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0);
 
-    std::cout << "Unregistered client: ";
-    if (ClientSock.IPv4.sin_family == AF_INET)
-    {
-        std::cout << std::hex << ntohl(ClientSock.IPv4.sin_addr.s_addr);
-    }
-    else
-    {
-        for (unsigned char* idx = std::begin(ClientSock.IPv6.sin6_addr.u.Byte);
-            idx < std::end(ClientSock.IPv6.sin6_addr.u.Byte);
-            idx++)
-        {
-            std::cout << std::hex << idx;
-        }
-    }
-    std::cout << std::endl;
+    std::cout << "Unregistered client: " << ClientSock.addr.ToString() << std::endl;
 }
 
 void NetworkController::ShutdownClients()
 {
     NetworkHeader Header = { NetworkMessageType::ShutdownClient, 0 };
+    NETSOCK Result;
 
     // for each client
     for (auto client : Clients)
@@ -571,19 +545,26 @@ void NetworkController::ShutdownClients()
         NETSOCK Socket = GetSocketTo(addr.IPv6);
 
         // send shutdown message
-        send(Socket, (char*)&Header, sizeof(Header), 0);
+        Result = send(Socket, (char*)&Header, sizeof(Header), 0);
+        if (!IsSocketValid(Result))
+        {
+            ReportError(" send shutdown failed for " + addr.ToString());
+        }
 
-        // TODO: wait for client to send UnregisterClient message, which
-        // is only sent after all unsent work is sent?
-        shutdown(Socket, SD_SEND);
+        shutdown(Socket, SD_BOTH);
         closesocket(Socket);
+    }
+
+    // wait for list of clients to go to zero, indicating all have unregistered.
+    while (Clients.size() > 0)
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
 
 void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
 {
-    if ((ServerSock.IPv4.sin_family == AF_INET) && (Settings.NetworkSettings.IPv4.sin_addr.s_addr == ServerSock.IPv4.sin_addr.s_addr) ||
-        (ServerSock.IPv6.sin6_family == AF_INET6) && (memcmp(&Settings.NetworkSettings.IPv6, &ServerSock.IPv6, sizeof(Settings.NetworkSettings.IPv6)) == 0))
+    if (ServerSock.addr == Settings.NetworkSettings.IPv6)
     {
         Bot->Stop();
     }
@@ -608,12 +589,12 @@ void NetworkController::ListenLoop()
 {
     while (true)
     {
-        NetworkConnectionInfo ConnInfo = { 0 };
+        NetworkConnectionInfo ConnInfo;
         //memset(ConnInfo.get(), 0, sizeof(NetworkConnectionInfo));
         
-        socklen_t ConnInfoAddrSize = sizeof(ConnInfo.IPv6);
+        socklen_t ConnInfoAddrSize = sizeof(ConnInfo.addr.IPv6);
 
-        ConnInfo.ClientSocket = accept(ListenSocket, (sockaddr*)&ConnInfo.IPv6, &ConnInfoAddrSize);
+        ConnInfo.ClientSocket = accept(ListenSocket, (sockaddr*)&ConnInfo.addr.IPv6, &ConnInfoAddrSize);
 
         if (!IsSocketValid(ConnInfo.ClientSocket))
         {
@@ -621,8 +602,16 @@ void NetworkController::ListenLoop()
             continue;
         }
 
-        //std::thread(&NetworkController::HandleRequest, this, std::move(ConnInfo)).detach(); // potentially thousands of threads
-        OutstandingConnections.EnqueueWorkItem(std::move(ConnInfo));
+        if (Settings.NetworkSettings.Server)
+        {
+            //std::thread(&NetworkController::HandleRequest, this, std::move(ConnInfo)).detach(); // potentially thousands of threads
+            OutstandingConnections.EnqueueWorkItem(std::move(ConnInfo));
+        }
+        else if (Settings.NetworkSettings.Client)
+        {
+            // process in-line
+            HandleRequest(OutstandingConnections, ConnInfo);
+        }
     }
 }
 
@@ -664,8 +653,6 @@ void NetworkController::ServerBind()
 {
     if (Settings.NetworkSettings.IPv4.sin_family == AF_INET)
     {
-        //Settings.NetworkSettings.IPv4.sin_port = SERVER_PORT;
-
         if (!IsSocketValid(
                 bind(
                     ListenSocket,
@@ -677,8 +664,6 @@ void NetworkController::ServerBind()
     }
     else
     {
-        //Settings.NetworkSettings.IPv6.sin6_port = SERVER_PORT;
-
         if (!IsSocketValid(
                 bind(
                     ListenSocket,
@@ -845,4 +830,43 @@ inline bool operator<(const AddressType& Left, const AddressType& Right)
     }
 
     return (memcmp(&Left.IPv6.sin6_addr, &Right.IPv6.sin6_addr, sizeof(sockaddr_in6)) < 0);
+}
+
+inline bool operator==(const AddressType & Left, const AddressType & Right)
+{
+    if (Left.IPv4.sin_family != Right.IPv4.sin_family)
+    {
+        return false;
+    }
+
+    if (Left.IPv4.sin_family == AF_INET)
+    {
+        return Left.IPv4.sin_addr.s_addr == Right.IPv4.sin_addr.s_addr;
+    }
+
+    // Assume IPv6
+
+    return memcmp(&Left.IPv6.sin6_addr, &Right.IPv6.sin6_addr, sizeof(Left.IPv6.sin6_addr)) == 0;;
+}
+
+std::string AddressType::ToString()
+{
+    std::stringstream AddressString;
+    if (IPv4.sin_family == AF_INET)
+    {
+
+        AddressString << std::hex << ntohl(IPv4.sin_addr.s_addr);
+    }
+    else
+    {
+        for (unsigned char* idx = std::begin(IPv6.sin6_addr.u.Byte);
+            idx < std::end(IPv6.sin6_addr.u.Byte);
+            idx++)
+        {
+            AddressString << std::hex << idx;
+        }
+    }
+    AddressString << std::endl;
+
+    return AddressString.str();
 }

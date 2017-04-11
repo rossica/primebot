@@ -35,6 +35,10 @@ private:
     std::atomic<bool> Quit;
     static std::atomic<int> RandomIterations;
 
+    std::mutex DoneLock;
+    // Used to signal that the client can shutdown
+    std::condition_variable Done;
+
     void ProcessOrReportResults(std::vector<mpz_class>& Results);
 public:
     Primebot() = delete;
@@ -46,4 +50,5 @@ public:
 
     void Start();
     void Stop();
+    void WaitForStop();
 };

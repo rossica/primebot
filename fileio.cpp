@@ -7,7 +7,7 @@
 #include <sstream>
 #include <functional>
 
-std::string GetPrimeBasePath(AllPrimebotSettings Settings, int Iterations)
+std::string GetPrimeBasePath(AllPrimebotSettings& Settings, int Iterations)
 {
     return
         Settings.FileSettings.Path

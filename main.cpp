@@ -61,11 +61,7 @@ int main(int argc, char** argv)
 
         pb.Start();
 
-        int dummy = 0;
-        std::cout << "Type anything and press enter to exit.";
-        std::cin >> dummy;
-
-        pb.Stop();
+        pb.WaitForStop();
     }
     else
     {
@@ -75,11 +71,8 @@ int main(int argc, char** argv)
 
         pb.Start();
 
-        int dummy = 0;
-        std::cout << "Type anything and press enter to exit.";
-        std::cin >> dummy;
-
-        pb.Stop();
+        // Only way to stop is to CTRL+C, but shutdown cleanly anyway
+        pb.WaitForStop();
     }
 
     return EXIT_SUCCESS;

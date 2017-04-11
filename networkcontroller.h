@@ -24,16 +24,6 @@ typedef int NETSOCK;
 #define CLIENT_PORT (htons(60001))
 #define STRING_BASE (62)
 
-struct NetworkConnectionInfo
-{
-    union
-    {
-        sockaddr_in IPv4;
-        sockaddr_in6 IPv6;
-    };
-    NETSOCK ClientSocket;
-};
-
 struct NetworkHeader
 {
     // Type of NetworkMessage
@@ -91,9 +81,18 @@ struct AddressType
     {
         IPv6 = { 0 };
     }
+
+    std::string ToString();
 };
 
 inline bool operator<(const AddressType& Left, const AddressType& Right);
+inline bool operator==(const AddressType& Left, const AddressType& Right);
+
+struct NetworkConnectionInfo
+{
+    AddressType addr;
+    NETSOCK ClientSocket;
+};
 
 struct NetworkClientInfo
 {

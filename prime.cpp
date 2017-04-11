@@ -211,15 +211,19 @@ void Primebot::Start()
         // Async implementation
         mpz_class AsyncStart(Start);
         mpz_class AsyncEnd(AsyncStart);
+        unsigned int RangeSize = Settings.PrimeSettings.BatchSize * Settings.PrimeSettings.ThreadCount;
         // Not using the threadpool, so stop it.
         Candidates.Stop();
 
-        for (unsigned long long i = 0; i < Settings.PrimeSettings.BatchCount; i++)
+        for (unsigned long long i = 0; (i < Settings.PrimeSettings.BatchCount) & !Quit; i++)
         {
             std::vector<mpz_class> Results;
-            while (Results.size() < Settings.PrimeSettings.BatchSize * Settings.PrimeSettings.ThreadCount)
+            while ((Results.size() < RangeSize) & !Quit)
             {
-                AsyncEnd += Settings.PrimeSettings.ThreadCount * Settings.PrimeSettings.BatchSize * 1000;
+                // Make the range grow proportionally to the size of numbers being searched.
+                AsyncEnd += 
+                    RangeSize
+                    * (unsigned int) mpz_sizeinbase(AsyncStart.get_mpz_t(), 2);
 
                 Results = concatenate(
                     Results,
@@ -246,11 +250,37 @@ void Primebot::Start()
 
 void Primebot::Stop()
 {
-    Quit = true;
-    Candidates.Stop();
-    if (Controller != nullptr)
+    if (!Quit)
     {
-        Controller->UnregisterClient();
+        Quit = true;
+        Candidates.Stop();
+        if (Controller != nullptr)
+        {
+            Controller->UnregisterClient();
+        }
+        {
+            std::unique_lock<std::mutex> lock(DoneLock);
+            Done.notify_all();
+        }
+    }
+}
+
+void Primebot::WaitForStop()
+{
+    if (Settings.PrimeSettings.UseAsync)
+    {
+        //int dummy = 0;
+        //std::cout << "Type anything and press enter to exit.";
+        //std::cin >> dummy;
+
+        Stop();
+    }
+    else
+    {
+        std::unique_lock<std::mutex> lock(DoneLock);
+
+        // Wait to exit
+        Done.wait(lock);
     }
 }
 

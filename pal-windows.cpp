@@ -19,18 +19,22 @@ BOOL WINAPI CtrlCHandler(DWORD type)
         if (ProgramSettings.NetworkSettings.Server && Controller != nullptr)
         {
             Controller->ShutdownClients();
+            // Now that cleanup has completed, let the OS kill the program
+            // by returning FALSE.
+            return FALSE;
         }
         else if (Bot != nullptr)
         {
             Bot->Stop();
+            // Don't let the OS kill this, because it'll exit on its own.
+            return TRUE;
         }
         break;
     default:
         printf("unrecognized signal: %u", type);
     }
 
-    // Now that cleanup has completed, let the OS kill the program
-    // by returning FALSE.
+    // let the OS kill the program by returning FALSE.
     return FALSE;
 }
 
