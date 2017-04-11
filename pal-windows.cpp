@@ -18,7 +18,7 @@ BOOL WINAPI CtrlCHandler(DWORD type)
     case CTRL_BREAK_EVENT:
         if (ProgramSettings.NetworkSettings.Server && Controller != nullptr)
         {
-            Controller->ShutdownClients();
+            Controller->Shutdown();
             // Now that cleanup has completed, let the OS kill the program
             // by returning FALSE.
             return FALSE;

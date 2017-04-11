@@ -40,6 +40,7 @@ public:
 	void Stop();
 
     unsigned int GetThreadCount() { return ThreadCount; }
+    auto GetWorkItemCount() { std::lock_guard<std::mutex> lock(WorkItemsLock); return WorkItems.size(); }
 };
 
 template<class T,class C>

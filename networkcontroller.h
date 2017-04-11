@@ -119,8 +119,8 @@ private:
     Primebot* Bot;
 
     // helper functions
-    std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, int Size);
-    bool SendPrime(NETSOCK Socket, const char const * Prime, int Size);
+    std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, size_t Size);
+    bool SendPrime(NETSOCK Socket, const char const * Prime, size_t Size);
     std::string GetPrimeBasePath(NetworkClientInfo& ClientInfo);
 
     // handles incoming requests, for client and server
@@ -149,6 +149,7 @@ public:
     NetworkController(AllPrimebotSettings Config);
     ~NetworkController();
     void Start();
+    void Shutdown();
 
     void SetPrimebot(Primebot* bot) { Bot = bot; }
 

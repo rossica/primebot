@@ -37,10 +37,10 @@ inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 #define ReportError(Msg) std::cerr << strerror(errno) << " at " << __FUNCTION__ << Msg << std::endl
 #endif
 
-std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, int Size)
+std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, size_t Size)
 {
     NETSOCK Result;
-    int ReceivedData = 0;
+    NETSOCK ReceivedData = 0;
 
     // yep, I'm allocating memory based on what a remote host tells me.
     // This is **VERY** INSECURE. Don't do it on networks that aren't secure.
@@ -62,9 +62,9 @@ std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, int Size
     return std::move(Data);
 }
 
-bool NetworkController::SendPrime(NETSOCK Socket, const char const * Prime, int Size)
+bool NetworkController::SendPrime(NETSOCK Socket, const char const * Prime, size_t Size)
 {
-    int SentData = 0;
+    NETSOCK SentData = 0;
     NETSOCK Result;
 
     do {
@@ -150,7 +150,7 @@ void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, Ne
         }
         break;
     case NetworkMessageType::ShutdownClient:
-        if (!Settings.NetworkSettings.Server)
+        if (Settings.NetworkSettings.Client)
         {
             HandleShutdownClient(ClientSock);
         }
@@ -159,8 +159,17 @@ void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, Ne
         return;
     }
     
-    //// Queue the client socket to be shutdown and closed asynchronously
-    CompleteConnections.EnqueueWorkItem(std::move(ClientSock));
+    if (Settings.NetworkSettings.Server)
+    {
+        // Queue the client socket to be shutdown and closed asynchronously
+        CompleteConnections.EnqueueWorkItem(std::move(ClientSock));
+    }
+    else if (Settings.NetworkSettings.Client)
+    {
+        // When finished, close the socket
+        shutdown(ClientSock.ClientSocket, SD_BOTH);
+        closesocket(ClientSock.ClientSocket);
+    }
 }
 
 void NetworkController::CleanupRequest(decltype(CompleteConnections)& pool, NetworkConnectionInfo ClientSock)
@@ -258,7 +267,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, Net
     Size = mpz_sizeinbase(Work.get_mpz_t(), STRING_BASE) + 2;
 
     Header.Type = NetworkMessageType::WorkItem;
-    Header.Size = htonl(Size);
+    Header.Size = htonl((unsigned int) Size);
 
     // Tell client how large data is
     Result = send(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0);
@@ -284,7 +293,7 @@ bool NetworkController::ReportWork(mpz_class& WorkItem)
     size_t Size = mpz_sizeinbase(WorkItem.get_mpz_t(), STRING_BASE) + 2;
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::ReportWork;
-    Header.Size = htonl(Size);
+    Header.Size = htonl((unsigned int) Size);
 
     Result = send(Socket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result))
@@ -340,8 +349,8 @@ bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems, size
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
     NetworkHeader Header = { 0 };
-    int Size;
-    int LastSize = 0;
+    unsigned int Size;
+    unsigned int LastSize = 0;
     int NetSize;
     std::unique_ptr<char[]> Data;
 
@@ -351,7 +360,7 @@ bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems, size
     }
 
     Header.Type = NetworkMessageType::BatchReportWork;
-    Header.Size = htonl(Count);
+    Header.Size = htonl((unsigned int) Count);
 
     // Send header with count of WorkItems
     Result = send(Socket, (char*)&Header, sizeof(Header), 0);
@@ -363,9 +372,9 @@ bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems, size
         return false;
     }
 
-    for (int i = 0; i < Count; i++)
+    for (size_t i = 0; i < Count; i++)
     {
-        Size = mpz_sizeinbase(WorkItems[i].get(), STRING_BASE) + 2;
+        Size = (int) mpz_sizeinbase(WorkItems[i].get(), STRING_BASE) + 2;
         if (Size > LastSize)
         {
             Data.reset(new char[Size]);
@@ -413,7 +422,7 @@ bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
     std::string Data;
 
     Header.Type = NetworkMessageType::BatchReportWork;
-    Header.Size = htonl(WorkItems.size());
+    Header.Size = htonl((unsigned int) WorkItems.size());
 
     // Send header with count of WorkItems
     Result = send(Socket, (char*)&Header, sizeof(Header), 0);
@@ -553,12 +562,6 @@ void NetworkController::ShutdownClients()
 
         shutdown(Socket, SD_BOTH);
         closesocket(Socket);
-    }
-
-    // wait for list of clients to go to zero, indicating all have unregistered.
-    while (Clients.size() > 0)
-    {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
 
@@ -811,6 +814,17 @@ void NetworkController::Start()
         // On the other hand, clients need to do other things, so run this
         // loop in a never-returning thread.
         std::thread(&NetworkController::ListenLoop, this).detach();
+    }
+}
+
+void NetworkController::Shutdown()
+{
+    ShutdownClients();
+
+    // wait for list of clients to go to zero, indicating all have unregistered.
+    while (Clients.size() > 0 || PendingIo.GetWorkItemCount() > 0)
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
 
