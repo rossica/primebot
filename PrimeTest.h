@@ -2,12 +2,16 @@
 #include <climits>
 #include <bitset>
 
+#if defined(_WIN32) || defined(_WIN64)
 #pragma warning( push )
 #pragma warning( disable: 4146 )
 #pragma warning( disable: 4800 )
+#endif
 #include "gmp.h"
 #include "gmpxx.h"
+#if defined(_WIN32) || defined(_WIN64)
 #pragma warning( pop )
+#endif
 
 
 int mod(int a, int b);

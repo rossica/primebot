@@ -4,13 +4,8 @@
 #include "asyncPrimeSearching.h" 
 #include "primeSearchingUtilities.h"
 #include "fileio.h"
-#pragma warning( push )
-#pragma warning( disable: 4146 )
-#pragma warning( disable: 4800 )
-#include "gmpxx.h" 
-#pragma warning( pop )
 
-std::atomic<int> Primebot::RandomIterations = 0;
+std::atomic<int> Primebot::RandomIterations(0);
 
 
 // Yeah this is kind of ugly, Old-C style.
@@ -157,8 +152,8 @@ void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
 }
 
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
-    Settings(Config),
     Controller(NetController),
+    Settings(Config),
     Threads(Config.PrimeSettings.ThreadCount),
     Quit(false)
 {

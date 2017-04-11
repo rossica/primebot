@@ -27,6 +27,7 @@
 *.exe
 *.out
 *.app
+bin/*
 
 # Project files
 x64/*

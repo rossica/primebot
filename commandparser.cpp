@@ -4,6 +4,10 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <WS2tcpip.h>
+#elif defined (__linux__)
+#include <string.h>
+// remove this if linux ever implements memcpy_s
+#define memcpy_s(dest, destsz, src, srcsz) memcpy(dest, src, destsz)
 #endif
 
 #define CompareArg(Arg, Val) (std::string(Arg) == Val)

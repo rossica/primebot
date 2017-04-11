@@ -20,7 +20,7 @@ int modTimes(int a, int b, int modulus) {
 }
 
 int firstBitFromLeft(std::bitset<numberIntSize> binary) {
-	for (auto i = binary.size() - 1; i != -1; i--) {
+	for (auto i = binary.size() - 1; i != (size_t) -1; i--) {
 		if (binary[i] == true) return static_cast<int>(i);
 	}
 	return -1;

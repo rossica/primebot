@@ -40,7 +40,7 @@ inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, size_t Size)
 {
     NETSOCK Result;
-    NETSOCK ReceivedData = 0;
+    size_t ReceivedData = 0;
 
     // yep, I'm allocating memory based on what a remote host tells me.
     // This is **VERY** INSECURE. Don't do it on networks that aren't secure.
@@ -62,9 +62,9 @@ std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, size_t S
     return std::move(Data);
 }
 
-bool NetworkController::SendPrime(NETSOCK Socket, const char const * Prime, size_t Size)
+bool NetworkController::SendPrime(NETSOCK Socket, const char * const Prime, size_t Size)
 {
-    NETSOCK SentData = 0;
+    size_t SentData = 0;
     NETSOCK Result;
 
     do {
@@ -208,7 +208,6 @@ mpz_class NetworkController::RequestWork()
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
-    int ReceivedData = 0;
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::RequestWork;
 
@@ -253,7 +252,6 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, Net
 {
     NetworkHeader Header = { 0 };
     size_t Size;
-    int SentData = 0;
     NETSOCK Result;
 
     // Generate prime number to send to client
@@ -289,7 +287,6 @@ bool NetworkController::ReportWork(mpz_class& WorkItem)
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
     bool Success;
-    int SentData = 0;
     size_t Size = mpz_sizeinbase(WorkItem.get_mpz_t(), STRING_BASE) + 2;
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::ReportWork;
@@ -417,7 +414,6 @@ bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
     NETSOCK Result;
     NetworkHeader Header = { 0 };
     int Size;
-    int LastSize = 0;
     int NetSize;
     std::string Data;
 
@@ -873,8 +869,8 @@ std::string AddressType::ToString()
     }
     else
     {
-        for (unsigned char* idx = std::begin(IPv6.sin6_addr.u.Byte);
-            idx < std::end(IPv6.sin6_addr.u.Byte);
+        for (unsigned char* idx = std::begin(IPv6.sin6_addr.s6_addr);
+            idx < std::end(IPv6.sin6_addr.s6_addr);
             idx++)
         {
             AddressString << std::hex << idx;
