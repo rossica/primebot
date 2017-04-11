@@ -74,9 +74,9 @@ std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
     return Powers;
 }
 
-void Primebot::FindPrime(decltype(Candidates)& pool, mpz_class && workitem)
+void Primebot::FindPrime(mpz_class && workitem)
 {
-    unsigned int Step = 2 * pool.GetThreadCount();
+    unsigned int Step = 2 * Settings.PrimeSettings.ThreadCount;
 
     for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchCount && !Quit; j++)
     {
@@ -159,8 +159,7 @@ void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
     Settings(Config),
     Controller(NetController),
-    Candidates(Config.PrimeSettings.ThreadCount,
-        std::bind(&Primebot::FindPrime, this, std::placeholders::_1, std::placeholders::_2)),
+    Threads(Config.PrimeSettings.ThreadCount),
     Quit(false)
 {
 }
@@ -212,8 +211,6 @@ void Primebot::Start()
         mpz_class AsyncStart(Start);
         mpz_class AsyncEnd(AsyncStart);
         unsigned int RangeSize = Settings.PrimeSettings.BatchSize * Settings.PrimeSettings.ThreadCount;
-        // Not using the threadpool, so stop it.
-        Candidates.Stop();
 
         for (unsigned long long i = 0; (i < Settings.PrimeSettings.BatchCount) & !Quit; i++)
         {
@@ -238,12 +235,13 @@ void Primebot::Start()
     }
     else
     {
-        for (unsigned int i = 1; i <= Candidates.GetThreadCount(); i++)
+        for (unsigned int i = 1; i <= Threads.size(); i++)
         {
             // ((2 * i) + Start)
             mpz_class work(Start);
             work += (2 * i);
-            Candidates.EnqueueWorkItem(std::move(work));
+            Threads[i-1] = std::move(std::thread(&Primebot::FindPrime, this, std::move(work)));
+            //Candidates.EnqueueWorkItem(std::move(work));
         }
     }
 }
@@ -252,12 +250,23 @@ void Primebot::Stop()
 {
     if (!Quit)
     {
+        // Stop running loops
         Quit = true;
-        Candidates.Stop();
+        // Wait for threads to finish
+        for (auto& t : Threads)
+        {
+            if (t.joinable())
+            {
+                t.join();
+            }
+        }
+        Threads.clear();
+        // Signal to server that we're done
         if (Controller != nullptr)
         {
             Controller->UnregisterClient();
         }
+        // Notify main() that it's time to quit
         {
             std::unique_lock<std::mutex> lock(DoneLock);
             Done.notify_all();

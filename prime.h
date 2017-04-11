@@ -29,9 +29,9 @@ class Primebot
 {
 private:
     NetworkController* Controller;
-    Threadpool<mpz_class> Candidates;
     AllPrimebotSettings Settings;
-    void FindPrime(decltype(Candidates)& pool, mpz_class&& workitem);
+    std::vector<std::thread> Threads;
+    void FindPrime(mpz_class&& workitem);
     std::atomic<bool> Quit;
     static std::atomic<int> RandomIterations;
 
