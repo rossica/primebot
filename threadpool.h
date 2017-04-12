@@ -46,6 +46,8 @@ public:
 template<class T,class C>
 Threadpool<T,C>::Threadpool(unsigned int ThreadCount, std::function<void(Threadpool<T,C>&, T)>&& ProcessWorkitemFunc) :
     Threads(ThreadCount),
+    Stopping(false),
+    Stopped(false),
     ThreadCount(ThreadCount),
     ProcessWorkItem(std::move(ProcessWorkitemFunc))
 {

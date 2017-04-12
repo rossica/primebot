@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 
 #include "commandparsertypes.h"
 #include "networkcontroller.h"
@@ -18,25 +19,30 @@ extern Primebot* Bot;
 
 void CtrlCHandler(int type)
 {
-    switch(type)
-    {
-    case SIGINT:
-    case SIGTERM:
-        if(ProgramSettings.NetworkSettings.Server && Controller != nullptr)
+    std::thread(
+        [type]
         {
-            Controller->Shutdown();
-            // Now that cleanup is complete, exit the program.
-            exit(EXIT_SUCCESS);
+            switch(type)
+            {
+            case SIGINT:
+            case SIGTERM:
+                if(ProgramSettings.NetworkSettings.Server && Controller != nullptr)
+                {
+                    Controller->Shutdown();
+                    // Now that cleanup is complete, exit the program.
+                    exit(EXIT_SUCCESS);
+                }
+                else if(Bot != nullptr)
+                {
+                    Bot->Stop();
+                    // No need to exit here, the program will exit on its own.
+                }
+                break;
+            default:
+                printf("unrecognized signal: %d", type);
+            }
         }
-        else if(Bot != nullptr)
-        {
-            Bot->Stop();
-            // No need to exit here, the program will exit on its own.
-        }
-        break;
-    default:
-        printf("unrecognized signal: %d", type);
-    }
+    ).detach();
 }
 
 bool RegisterSignalHandler()
@@ -95,14 +101,14 @@ bool MakeDirectory(const char* Path)
     }
 
     // Create last folder
-    if(mkdir(CurrentFolder, S_IRWXU))
+    if(mkdir(Path, S_IRWXU))
     {
         if(errno != EEXIST)
         {
             fprintf(
                 stderr,
                 "Failed to create directory %s with error %s",
-                CurrentFolder,
+                Path,
                 strerror(errno));
                 // Don't delete partially-created hierarchies
                 return false;

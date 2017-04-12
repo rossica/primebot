@@ -517,12 +517,15 @@ void NetworkController::UnregisterClient()
 
 void NetworkController::HandleUnregisterClient(NetworkConnectionInfo& ClientSock)
 {
-    Clients.erase(ClientSock.addr);
-
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::ShutdownClient;
 
-    send(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0);
+    if(!IsSocketValid(send(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0)))
+    {
+        ReportError(" send unregister response to " + ClientSock.addr.ToString());
+    }
+
+    Clients.erase(ClientSock.addr);
 
     std::cout << "Unregistered client: " << ClientSock.addr.ToString() << std::endl;
 }
@@ -565,6 +568,7 @@ void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
 {
     if (ServerSock.addr == Settings.NetworkSettings.IPv6)
     {
+        std::cout << "Server instructed client to shutdown" << std::endl;
         Bot->Stop();
     }
 }
@@ -820,6 +824,7 @@ void NetworkController::Shutdown()
     // wait for list of clients to go to zero, indicating all have unregistered.
     while (Clients.size() > 0 || PendingIo.GetWorkItemCount() > 0)
     {
+        std::cout << "Waiting 1 second for clients to finish work" << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }

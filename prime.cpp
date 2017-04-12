@@ -173,14 +173,14 @@ void Primebot::Start()
         // Start listening for events from the server
         Controller->Start();
 
-        while (!Controller->RegisterClient())
+        while (!Controller->RegisterClient() & !Quit)
         {
             // Failed to register client, try again
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
 
         Start = Controller->RequestWork();
-        while (Start.get_ui() == 0)
+        while ((Start.get_ui() == 0) & !Quit)
         {
             // Failed to get work item, try again.
             std::this_thread::sleep_for(std::chrono::seconds(1));
