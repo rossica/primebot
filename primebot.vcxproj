@@ -124,6 +124,7 @@
     <ClCompile Include="fileio.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="networkcontroller.cpp" />
+    <ClCompile Include="numberSet.cpp" />
     <ClCompile Include="pal-windows.cpp" />
     <ClCompile Include="prime.cpp" />
     <ClCompile Include="PrimeTest.cpp" />
@@ -134,6 +135,7 @@
     <ClInclude Include="commandparsertypes.h" />
     <ClInclude Include="fileio.h" />
     <ClInclude Include="networkcontroller.h" />
+    <ClInclude Include="numberSet.h" />
     <ClInclude Include="onelockthreadpool.h" />
     <ClInclude Include="pal.h" />
     <ClInclude Include="prime.h" />
