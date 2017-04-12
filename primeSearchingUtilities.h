@@ -12,6 +12,17 @@
 #include <future>
 #include <utility>
 
+template<typename T, typename S, typename BinaryOp>
+auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
+    return
+        std::accumulate(
+            std::make_move_iterator( std::begin(factors) ),
+            std::make_move_iterator( std::end(factors) ),
+            init,
+            op
+        );
+}
+
 template<typename T>
 std::vector<T> concatenate(std::vector<T> first, std::vector<T> second) {
     first.insert(std::end(first),
@@ -19,6 +30,11 @@ std::vector<T> concatenate(std::vector<T> first, std::vector<T> second) {
         std::make_move_iterator(std::end(second))
     );
     return first;
+}
+
+template<typename T>
+std::vector<T> flatten(std::vector<std::vector<T>> listOfLists) {
+    return accumulate(concatenate<T>, std::vector<T>{}, listOfLists);
 }
 
 template<typename T, typename Unaryop>
@@ -31,17 +47,6 @@ auto map(Unaryop op, std::vector<T> in) {
         op
     );
     return results;
-}
-
-template<typename T, typename S, typename BinaryOp>
-auto accumulate(BinaryOp op, S init, std::vector<T> factors) {
-    return 
-        std::accumulate(
-            std::begin(factors), 
-            std::end(factors), 
-            init, 
-            op
-    );
 }
 
 //Takes elements [x1, x2, x3, x4] to [g(x1, x2), g(x2, x3), g(x3, x4)]
