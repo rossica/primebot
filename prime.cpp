@@ -189,10 +189,10 @@ void Primebot::ProcessIo(std::unique_ptr<mpz_list_list> && data)
 
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
     Controller(NetController),
-    IoPool(1,
-        std::bind(&Primebot::ProcessIo, this, std::placeholders::_1)),
     Settings(Config),
     Threads(Config.PrimeSettings.ThreadCount),
+    IoPool(1,
+        std::bind(&Primebot::ProcessIo, this, std::placeholders::_1)),
     Quit(false),
     Results(new std::vector<mpz_list>(Settings.PrimeSettings.ThreadCount)),
     ResultsCount(0)

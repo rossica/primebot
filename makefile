@@ -1,5 +1,5 @@
 DEBUG=-Og -g3 -Wl,-Og
-RELEASE=-O2 -finline-functions -fomit-frame-pointer -march=native -Wl,-O2
+RELEASE=-O2 -finline-functions -fomit-frame-pointer -march=native -Wl,-O2 -DNDEBUG
 CXXFLAGS=-std=c++14 -m64 -pipe -Wall -pedantic
 LFLAGS=-pipe -lgmp -lgmpxx -lpthread
 
