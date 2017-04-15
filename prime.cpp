@@ -25,7 +25,7 @@ std::pair<mpz_class, int> Primebot::GenerateRandomOdd(unsigned int Bits, unsigne
     static std::atomic<int> RandomIterations(0);
 
     int PreviousIteration;
-    if (Rand[0]._mp_algdata._mp_lc == nullptr) // does this even work?
+    if (Rand[0]._mp_algdata._mp_lc == nullptr)
     {
         gmp_randinit_mt(Rand);
     }
@@ -38,7 +38,6 @@ std::pair<mpz_class, int> Primebot::GenerateRandomOdd(unsigned int Bits, unsigne
     }
 
     mpz_class Work;
-    //mpz_init_set_ui(Work.get(), 1);
     mpz_urandomb(Work.get_mpz_t(), Rand, Bits);
 
     PreviousIteration = RandomIterations.fetch_add(1);
@@ -88,7 +87,7 @@ void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
 
         mpz_list Batch;
         // This wastes some memory, but we'll never have to do a resize operation.
-        Batch.reserve(GetReservedSize(BatchSize,workitem.get_mpz_t()));
+        Batch.reserve(GetReservedSize(BatchSize, workitem.get_mpz_t()));
 
         // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
         // composite number will pass the nth iteration of the test.
@@ -106,7 +105,7 @@ void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
             if (mpz_probab_prime_p(workitem.get_mpz_t(), MillerRabinIterations))
             {
                 // this will invoke the copy constructor
-                Batch.push_back(workitem);
+                Batch.emplace_back(workitem);
             }
         }
 
@@ -176,15 +175,10 @@ void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
 // when this thread is waiting for I/O.
 void Primebot::ProcessIo(std::unique_ptr<mpz_list_list> && data)
 {
-    mpz_list FlattenedList;
-    FlattenedList.reserve(data->front().size() * Settings.PrimeSettings.ThreadCount);
-
     for (mpz_list& l : *data)
     {
-        FlattenedList.insert(FlattenedList.end(), std::make_move_iterator(l.begin()), std::make_move_iterator(l.end()));
+        ProcessOrReportResults(l);
     }
-
-    ProcessOrReportResults(FlattenedList);
 }
 
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :

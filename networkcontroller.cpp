@@ -822,10 +822,16 @@ void NetworkController::Shutdown()
     ShutdownClients();
 
     // wait for list of clients to go to zero, indicating all have unregistered.
-    while (Clients.size() > 0 || PendingIo.GetWorkItemCount() > 0)
+    auto RemainingClients = Clients.size();
+    auto RemainingIo = PendingIo.GetWorkItemCount();
+    while (RemainingClients > 0 || RemainingIo > 0)
     {
-        std::cout << "Waiting 1 second for clients to finish work" << std::endl;
+        std::cout << "Waiting 1 second for remaining clients: " << RemainingClients
+            << ", remaining I/Os: " << RemainingIo << std::endl;
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        RemainingClients = Clients.size();
+        RemainingIo = PendingIo.GetWorkItemCount();
     }
 }
 

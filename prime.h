@@ -11,7 +11,7 @@
 #pragma warning( pop )
 #endif
 #include "threadpool.h"
-
+#include <list>
 
 
 struct FreeMpz
@@ -39,7 +39,7 @@ private:
     NetworkController* Controller;
     AllPrimebotSettings Settings;
     std::vector<std::thread> Threads;
-    Threadpool<std::unique_ptr<mpz_list_list>> IoPool;
+    Threadpool<std::unique_ptr<mpz_list_list>, std::list<std::unique_ptr<mpz_list_list>>> IoPool;
     std::atomic<bool> Quit;
     std::atomic<mpz_list_list*> Results;
     std::atomic<uint64_t> ResultsCount;
