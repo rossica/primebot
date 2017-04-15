@@ -93,7 +93,7 @@ std::string NetworkController::GetPrimeBasePath(NetworkClientInfo & ClientInfo)
     return ::GetPrimeBasePath(Dummy, ClientInfo.RandomInteration);
 }
 
-void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, NetworkConnectionInfo ClientSock)
+void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
 {
     if (!IsSocketValid(ClientSock.ClientSocket))
     {
@@ -172,7 +172,7 @@ void NetworkController::HandleRequest(decltype(OutstandingConnections)& pool, Ne
     }
 }
 
-void NetworkController::CleanupRequest(decltype(CompleteConnections)& pool, NetworkConnectionInfo ClientSock)
+void NetworkController::CleanupRequest(NetworkConnectionInfo ClientSock)
 {
     // When finished, close the client socket
     shutdown(ClientSock.ClientSocket, SD_BOTH);
@@ -573,7 +573,7 @@ void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
     }
 }
 
-void NetworkController::ProcessIO(decltype(PendingIo)& pool, ControllerIoInfo Info)
+void NetworkController::ProcessIO(ControllerIoInfo Info)
 {
     if (Info.Path.empty())
     {
@@ -613,7 +613,7 @@ void NetworkController::ListenLoop()
         else if (Settings.NetworkSettings.Client)
         {
             // process in-line
-            HandleRequest(OutstandingConnections, ConnInfo);
+            HandleRequest(ConnInfo);
         }
     }
 }
@@ -729,13 +729,13 @@ NetworkController::NetworkController(AllPrimebotSettings Config) :
     Settings(Config),
     OutstandingConnections(
         std::thread::hardware_concurrency(),
-        std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1, std::placeholders::_2)),
+        std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1)),
     CompleteConnections(
         std::thread::hardware_concurrency(),
-        std::bind(&NetworkController::CleanupRequest, this, std::placeholders::_1, std::placeholders::_2)),
+        std::bind(&NetworkController::CleanupRequest, this, std::placeholders::_1)),
     PendingIo(
         1, // TODO: make IO Threads configurable
-        std::bind(&NetworkController::ProcessIO, this, std::placeholders::_1, std::placeholders::_2)),
+        std::bind(&NetworkController::ProcessIO, this, std::placeholders::_1)),
     ListenSocket(INVALID_SOCKET),
     Bot(nullptr)
 {

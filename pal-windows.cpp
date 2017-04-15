@@ -65,7 +65,8 @@ bool MakeDirectory(const char* Path)
             DWORD Error = GetLastError();
             if (Error != ERROR_ALREADY_EXISTS)
             {
-                printf(
+                fprintf(
+                    stderr,
                     "Failed to create directory %s with error %u",
                     CurrentFolder,
                     Error);
@@ -81,7 +82,8 @@ bool MakeDirectory(const char* Path)
     {
         if (GetLastError() != ERROR_ALREADY_EXISTS)
         {
-            printf(
+            fprintf(
+                stderr,
                 "Failed to create directory %s with error %u",
                 CurrentFolder,
                 GetLastError());

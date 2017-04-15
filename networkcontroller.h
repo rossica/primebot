@@ -124,7 +124,7 @@ private:
     std::string GetPrimeBasePath(NetworkClientInfo& ClientInfo);
 
     // handles incoming requests, for client and server
-    void HandleRequest(decltype(OutstandingConnections)& pool, NetworkConnectionInfo ClientSock);
+    void HandleRequest(NetworkConnectionInfo ClientSock);
 
     void HandleRegisterClient(NetworkConnectionInfo& ClientSock);
     void HandleRequestWork(NetworkConnectionInfo& ClientSock, NetworkClientInfo& ClientInfo);
@@ -133,10 +133,10 @@ private:
     void HandleUnregisterClient(NetworkConnectionInfo& ClientSock);
     void HandleShutdownClient(NetworkConnectionInfo& ServerSock);
 
-    void CleanupRequest(decltype(CompleteConnections)& pool, NetworkConnectionInfo ClientSock);
+    void CleanupRequest(NetworkConnectionInfo ClientSock);
 
     // Handle IO
-    void ProcessIO(decltype(PendingIo)& pool, ControllerIoInfo Info);
+    void ProcessIO(ControllerIoInfo Info);
 
     void ListenLoop();
     void ClientBind();

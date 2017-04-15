@@ -24,6 +24,10 @@ struct FreeMpz
 };
 using unique_mpz = std::unique_ptr<__mpz_struct, FreeMpz>;
 
+using mpz_list = std::vector<mpz_class>;
+
+using mpz_list_list = std::vector<mpz_list>;
+
 
 
 // Forward Declarations
@@ -35,15 +39,20 @@ private:
     NetworkController* Controller;
     AllPrimebotSettings Settings;
     std::vector<std::thread> Threads;
-    void FindPrime(mpz_class&& workitem);
+    Threadpool<std::unique_ptr<mpz_list_list>> IoPool;
     std::atomic<bool> Quit;
-    static std::atomic<int> RandomIterations;
+    std::atomic<mpz_list_list*> Results;
+    std::atomic<uint64_t> ResultsCount;
 
     std::mutex DoneLock;
     // Used to signal that the client can shutdown
     std::condition_variable Done;
 
+    void FindPrime(mpz_class&& workitem, int id, unsigned int BatchSize);
+
     void ProcessOrReportResults(std::vector<mpz_class>& Results);
+
+    void ProcessIo(std::unique_ptr<mpz_list_list> && data);
 public:
     Primebot() = delete;
     Primebot(AllPrimebotSettings config, NetworkController* NetController);

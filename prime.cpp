@@ -1,11 +1,18 @@
 #include <iostream>
+#include <cmath>
+#include <cassert>
 #include "prime.h"
 #include "networkcontroller.h"
 #include "asyncPrimeSearching.h" 
 #include "primeSearchingUtilities.h"
 #include "fileio.h"
 
-std::atomic<int> Primebot::RandomIterations(0);
+inline size_t GetReservedSize(unsigned int BatchSize, mpz_ptr Candidate)
+{
+    // 0.7 approximates ln(2).
+    // ceil()s to the nearest 1000
+    return std::ceil(((2 * BatchSize) / (mpz_sizeinbase(Candidate, 2) * 0.7)) / 1000.0) * 1000;
+}
 
 
 // Yeah this is kind of ugly, Old-C style.
@@ -15,6 +22,8 @@ std::pair<mpz_class, int> Primebot::GenerateRandomOdd(unsigned int Bits, unsigne
 {
     static gmp_randstate_t Rand = { 0 };
     static unsigned int LastSeed = 0;
+    static std::atomic<int> RandomIterations(0);
+
     int PreviousIteration;
     if (Rand[0]._mp_algdata._mp_lc == nullptr) // does this even work?
     {
@@ -69,58 +78,69 @@ std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
     return Powers;
 }
 
-void Primebot::FindPrime(mpz_class && workitem)
+void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
 {
-    unsigned int Step = 2 * Settings.PrimeSettings.ThreadCount;
+    unsigned int Step = 2 * BatchSize * (Settings.PrimeSettings.ThreadCount - 1);
 
     for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchCount && !Quit; j++)
     {
-        std::vector<mpz_class> Batch;
+        assert(mpz_odd_p(workitem.get_mpz_t()));
 
-        for (unsigned int i = 0; i < Settings.PrimeSettings.BatchSize && !Quit; i++)
+        mpz_list Batch;
+        // This wastes some memory, but we'll never have to do a resize operation.
+        Batch.reserve(GetReservedSize(BatchSize,workitem.get_mpz_t()));
+
+        // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
+        // composite number will pass the nth iteration of the test.
+        // The below selects the bit-length of the candidate prime, divided by 2
+        // as the number of iterations to perform.
+        // This has the property of putting the probability of a composite passing
+        // the test to be less than the count of possible numbers for a given bit-length.
+        // Or so I think...
+        int MillerRabinIterations = (mpz_sizeinbase(workitem.get_mpz_t(), 2) / 2);
+
+        // The increment of workitem in the last iteration is essential to making
+        // sure there are no gaps.
+        for (unsigned int i = 0; i < BatchSize && !Quit; i++, workitem += 2)
         {
-            if (mpz_even_p(workitem.get_mpz_t()))
+            if (mpz_probab_prime_p(workitem.get_mpz_t(), MillerRabinIterations))
             {
-                std::cout << "WHY IS THIS EVEN?!" << std::endl;
-                workitem += 1;
+                // this will invoke the copy constructor
+                Batch.push_back(workitem);
             }
-
-            // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
-            // composite number will pass the nth iteration of the test.
-            // The below selects the bit-length of the candidate prime, divided by 2
-            // as the number of iterations to perform.
-            // This has the property of putting the probability of a composite passing
-            // the test to be less than the count of possible numbers for a given bit-length.
-            // Or so I think...
-            while (mpz_probab_prime_p(workitem.get_mpz_t(), (mpz_sizeinbase(workitem.get_mpz_t(), 2) / 2)) == 0 && !Quit)
-            {
-                workitem += Step;
-            }
-
-            // If not quitting, just add the number to the list of results
-            if (!Quit)
-            {
-                // Copy the result to the Results queue
-                mpz_class Result(workitem);
-                Batch.push_back(std::move(Result));
-            }
-            else
-            {
-                // During quit, make sure that the number is actually prime
-                if (mpz_probab_prime_p(workitem.get_mpz_t(), (mpz_sizeinbase(workitem.get_mpz_t(), 2) / 2)))
-                {
-                    // Copy the result to the Results queue
-                    mpz_class Result(workitem);
-                    Batch.push_back(std::move(Result));
-                }
-            }
-
-            workitem += Step;
         }
 
-        ProcessOrReportResults(Batch);
+        // If this thread has reported any results already
+        // wait until the last thread cleans up the results before inserting
+        // TODO: this could be optimized somehow...
+        while (Results.load()->data()[id].size())
+        {
+            std::this_thread::yield();
+        }
 
-        Batch.clear();
+        // Store results in shared array
+        // After this, Batch should be empty
+        Results.load()->data()[id].swap(Batch);
+
+        // At this point, Batch should be empty
+        assert(Batch.empty());
+
+        // Create new Results list in case we're the last thread and have to
+        // send results; this'll be cleaned up if unused.
+        std::unique_ptr<mpz_list_list> MyResults(new mpz_list_list(Settings.PrimeSettings.ThreadCount));
+
+        if (++ResultsCount % Settings.PrimeSettings.ThreadCount == 0)
+        {
+            // Swap the shared Results vector with the temp one
+            MyResults.reset(Results.exchange(MyResults.release()));
+
+            IoPool.EnqueueWorkItem(std::move(MyResults));
+
+        }
+        MyResults.reset(nullptr);
+
+        // move to the next batch
+        workitem += Step;
     }
 }
 
@@ -151,13 +171,32 @@ void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
     }
 }
 
+// This will contend with the worker threads, but the OS thread
+// scheduler should be smart enough to schedule the worker threads
+// when this thread is waiting for I/O.
+void Primebot::ProcessIo(std::unique_ptr<mpz_list_list> && data)
+{
+    mpz_list FlattenedList;
+    FlattenedList.reserve(data->front().size() * Settings.PrimeSettings.ThreadCount);
+
+    for (mpz_list& l : *data)
+    {
+        FlattenedList.insert(FlattenedList.end(), std::make_move_iterator(l.begin()), std::make_move_iterator(l.end()));
+    }
+
+    ProcessOrReportResults(FlattenedList);
+}
+
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
     Controller(NetController),
+    IoPool(1,
+        std::bind(&Primebot::ProcessIo, this, std::placeholders::_1)),
     Settings(Config),
     Threads(Config.PrimeSettings.ThreadCount),
-    Quit(false)
-{
-}
+    Quit(false),
+    Results(new std::vector<mpz_list>(Settings.PrimeSettings.ThreadCount)),
+    ResultsCount(0)
+{}
 
 Primebot::~Primebot()
 {
@@ -230,13 +269,15 @@ void Primebot::Start()
     }
     else
     {
-        for (unsigned int i = 1; i <= Threads.size(); i++)
+        // Make BatchSize grow proportionally to the size of the numbers being searched.
+        unsigned int BatchSize = Settings.PrimeSettings.BatchSize * mpz_sizeinbase(Start.get_mpz_t(), 2);
+
+        for (unsigned int i = 0; i < Threads.size(); i++)
         {
             // ((2 * i) + Start)
             mpz_class work(Start);
-            work += (2 * i);
-            Threads[i-1] = std::move(std::thread(&Primebot::FindPrime, this, std::move(work)));
-            //Candidates.EnqueueWorkItem(std::move(work));
+            work += (2 * i * BatchSize);
+            Threads[i] = std::move(std::thread(&Primebot::FindPrime, this, std::move(work), i, BatchSize));
         }
     }
 }
