@@ -103,8 +103,9 @@ struct NetworkClientInfo
 
 struct ControllerIoInfo
 {
-    std::string Path;
+    std::string Name;
     std::unique_ptr<char[]> Data;
+    std::vector<std::string> BatchData;
 };
 
 class NetworkController
@@ -121,7 +122,7 @@ private:
     // helper functions
     std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, size_t Size);
     bool SendPrime(NETSOCK Socket, const char * const Prime, size_t Size);
-    std::string GetPrimeBasePath(NetworkClientInfo& ClientInfo);
+    std::string GetPrimeFileName(NetworkClientInfo& ClientInfo);
 
     // handles incoming requests, for client and server
     void HandleRequest(NetworkConnectionInfo ClientSock);
@@ -156,7 +157,6 @@ public:
     bool RegisterClient();
     mpz_class RequestWork();
     bool ReportWork(mpz_class& WorkItem);
-    bool BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t count = 0);
     bool BatchReportWork(std::vector<mpz_class>& WorkItems);
     void UnregisterClient();
     void ShutdownClients();

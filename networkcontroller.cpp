@@ -82,7 +82,7 @@ bool NetworkController::SendPrime(NETSOCK Socket, const char * const Prime, size
     return true;
 }
 
-std::string NetworkController::GetPrimeBasePath(NetworkClientInfo & ClientInfo)
+std::string NetworkController::GetPrimeFileName(NetworkClientInfo & ClientInfo)
 {
     AllPrimebotSettings Dummy;
 
@@ -90,7 +90,7 @@ std::string NetworkController::GetPrimeBasePath(NetworkClientInfo & ClientInfo)
     Dummy.PrimeSettings.RngSeed = ClientInfo.Seed;
     Dummy.PrimeSettings.Bitsize = ClientInfo.Bitsize;
 
-    return ::GetPrimeBasePath(Dummy, ClientInfo.RandomInteration);
+    return ::GetPrimeFileName(Dummy, ClientInfo.RandomInteration);
 }
 
 void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
@@ -333,79 +333,12 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
     if (!Settings.FileSettings.Path.empty())
     {
         // write Data to file
-        PendingIo.EnqueueWorkItem({ GetPrimeBasePath(ClientInfo), std::move(Data) });
+        PendingIo.EnqueueWorkItem({ GetPrimeFileName(ClientInfo), std::move(Data) });
     }
     else
     {
         PendingIo.EnqueueWorkItem({ "", std::move(Data) });
     }
-}
-
-bool NetworkController::BatchReportWork(std::vector<unique_mpz>& WorkItems, size_t Count)
-{
-    NETSOCK Socket = GetSocketToServer();
-    NETSOCK Result;
-    NetworkHeader Header = { 0 };
-    unsigned int Size;
-    unsigned int LastSize = 0;
-    int NetSize;
-    std::unique_ptr<char[]> Data;
-
-    if (Count == 0)
-    {
-        Count = WorkItems.size();
-    }
-
-    Header.Type = NetworkMessageType::BatchReportWork;
-    Header.Size = htonl((unsigned int) Count);
-
-    // Send header with count of WorkItems
-    Result = send(Socket, (char*)&Header, sizeof(Header), 0);
-    if (!IsSocketValid(Result))
-    {
-        ReportError(" send header");
-        shutdown(Socket, SD_SEND);
-        closesocket(Socket);
-        return false;
-    }
-
-    for (size_t i = 0; i < Count; i++)
-    {
-        Size = (int) mpz_sizeinbase(WorkItems[i].get(), STRING_BASE) + 2;
-        if (Size > LastSize)
-        {
-            Data.reset(new char[Size]);
-            LastSize = Size;
-        }
-        else
-        {
-            memset(Data.get(), 0, LastSize); // Assumption: zeroing out memory is faster than malloc()
-        }
-        mpz_get_str(Data.get(), STRING_BASE, WorkItems[i].get());
-
-        // Convert Size to network-format.
-        NetSize = htonl(Size);
-
-        Result = send(Socket, (char*)&NetSize, sizeof(NetSize), 0);
-        if (!IsSocketValid(Result))
-        {
-            ReportError(" send size: " + std::to_string(i));
-            shutdown(Socket, SD_SEND);
-            closesocket(Socket);
-            return false;
-        }
-
-        if (!SendPrime(Socket, Data.get(), Size))
-        {
-            ReportError(" send prime: " + std::to_string(i));
-            shutdown(Socket, SD_SEND);
-            closesocket(Socket);
-            return false;
-        }
-    }
-
-    closesocket(Socket);
-    return true;
 }
 
 bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
@@ -465,6 +398,9 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
     NETSOCK Result;
     int Size;
     std::unique_ptr<char[]> Data;
+    std::vector<std::string> BatchData;
+
+    BatchData.reserve(Count);
 
     // Only receiving data here
     shutdown(ClientSock.ClientSocket, SD_SEND);
@@ -489,18 +425,20 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
             return;
         }
 
-        // Enqueue work to a threadpool to actually handle the file IO, since
-        // that may be slow. The server should have enough memory to hold all
-        // the data until it is written out.
-        if (!Settings.FileSettings.Path.empty())
-        {
-            // write Data to file
-            PendingIo.EnqueueWorkItem({ GetPrimeBasePath(ClientInfo), std::move(Data) });
-        }
-        else
-        {
-            PendingIo.EnqueueWorkItem({ "", std::move(Data) });
-        }
+        BatchData.emplace_back(Data.get());
+    }
+
+    // Enqueue work to a threadpool to actually handle the file IO, since
+    // that may be slow. The server should have enough memory to hold all
+    // the data until it is written out.
+    if (!Settings.FileSettings.Path.empty())
+    {
+        // write Data to file
+        PendingIo.EnqueueWorkItem({ GetPrimeFileName(ClientInfo), nullptr, std::move(BatchData) });
+    }
+    else
+    {
+        PendingIo.EnqueueWorkItem({ "", nullptr, std::move(BatchData) });
     }
 }
 
@@ -575,17 +513,39 @@ void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
 
 void NetworkController::ProcessIO(ControllerIoInfo Info)
 {
-    if (Info.Path.empty())
+    // Single-item case
+    if (Info.Data != nullptr)
     {
-        mpz_class Work(Info.Data.get(), STRING_BASE);
+        if (Info.Name.empty())
+        {
+            mpz_class Work(Info.Data.get(), STRING_BASE);
 
-        //std::cout << Work << std::endl; // linker error on windows
-        gmp_printf("%Zd\n", Work.get_mpz_t());
+            //std::cout << Work << std::endl; // linker error on windows
+            gmp_printf("%Zd\n", Work.get_mpz_t());
+        }
+        else
+        {
+            WritePrimeToSingleFile(Settings.FileSettings.Path, Info.Name, Info.Data.get());
+        }
     }
-    else
+    else // batch-work case
     {
-        WritePrimeToFile(Info.Path, Info.Data.get());
+        if (Info.Name.empty())
+        {
+            for (std::string & d : Info.BatchData)
+            {
+                mpz_class Work(d, STRING_BASE);
+
+                //std::cout << Work << std::endl; // linker error on windows
+                gmp_printf("%Zd\n", Work.get_mpz_t());
+            }
+        }
+        else
+        {
+            WritePrimesToSingleFile(Settings.FileSettings.Path, Info.Name, Info.BatchData);
+        }
     }
+
 }
 
 void NetworkController::ListenLoop()

@@ -100,7 +100,9 @@ void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
 
         // The increment of workitem in the last iteration is essential to making
         // sure there are no gaps.
-        for (unsigned int i = 0; i < BatchSize && !Quit; i++, workitem += 2)
+        // Note: this loop wont be canceled by Quit because it's guaranteed to
+        // always reach a terminal state, so it'll always return a full batch.
+        for (unsigned int i = 0; i < BatchSize; i++, workitem += 2)
         {
             if (mpz_probab_prime_p(workitem.get_mpz_t(), MillerRabinIterations))
             {
@@ -152,20 +154,21 @@ void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
     }
     else
     {
-        for (auto& res : Results)
+        if (Settings.FileSettings.Path.empty())
         {
-            if (Settings.FileSettings.Path.empty())
+            for (auto& res : Results)
             {
                 // print results to console
                 gmp_printf("%Zd\n", res.get_mpz_t());
             }
-            else
-            {
-                // Write out to disk here if file path present
-                WritePrimeToFile(
-                    Settings.FileSettings.Path,
-                    res.get_str(STRING_BASE));
-            }
+        }
+        else
+        {
+            // Write out to disk here if file path present
+            WritePrimesToSingleFile(
+                Settings.FileSettings.Path,
+                ::GetPrimeFileName(Settings, 1),
+                Results);
         }
     }
 }
@@ -225,12 +228,6 @@ void Primebot::Start()
         // Stand-alone mode, generate starting prime
         auto RandomWork = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
         Start = RandomWork.first;
-
-        // Update the path setting only if it's specified.
-        if (!Settings.FileSettings.Path.empty())
-        {
-            Settings.FileSettings.Path = GetPrimeBasePath(Settings, RandomWork.second);
-        }
     }
 
     if (Settings.PrimeSettings.UseAsync)
@@ -238,27 +235,26 @@ void Primebot::Start()
         // Async implementation
         mpz_class AsyncStart(Start);
         mpz_class AsyncEnd(AsyncStart);
-        unsigned int RangeSize = Settings.PrimeSettings.BatchSize * Settings.PrimeSettings.ThreadCount;
+
+        // Make the range grow proportionally to the size of numbers being searched.
+        unsigned int RangeSize = 
+            Settings.PrimeSettings.BatchSize
+            * Settings.PrimeSettings.ThreadCount
+            * mpz_sizeinbase(AsyncStart.get_mpz_t(), 2);
 
         for (unsigned long long i = 0; (i < Settings.PrimeSettings.BatchCount) & !Quit; i++)
         {
-            std::vector<mpz_class> Results;
-            while ((Results.size() < RangeSize) & !Quit)
-            {
-                // Make the range grow proportionally to the size of numbers being searched.
-                AsyncEnd += 
-                    RangeSize
-                    * (unsigned int) mpz_sizeinbase(AsyncStart.get_mpz_t(), 2);
+            AsyncEnd += RangeSize;
 
-                Results = concatenate(
-                    Results,
-                    findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd));
+            std::unique_ptr<mpz_list_list> IoContainer(new mpz_list_list());
 
-                // Move the start to the end of the range
-                AsyncStart = AsyncEnd;
-            }
+            IoContainer->push_back(
+                findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd));
 
-            ProcessOrReportResults(Results);
+            IoPool.EnqueueWorkItem(std::move(IoContainer));
+
+            // Move the start to the end of the range
+            AsyncStart = AsyncEnd;
         }
     }
     else
@@ -291,6 +287,10 @@ void Primebot::Stop()
             }
         }
         Threads.clear();
+
+        // Drain remaining I/Os
+        IoPool.Stop();
+
         // Signal to server that we're done
         if (Controller != nullptr)
         {
@@ -312,6 +312,8 @@ void Primebot::WaitForStop()
         //std::cout << "Type anything and press enter to exit.";
         //std::cin >> dummy;
 
+        // Nothing to wait for, since the Async path runs in a loop that doesn't
+        // exit until Quit is set from CTRL+C/server shutdown message.
         Stop();
     }
     else

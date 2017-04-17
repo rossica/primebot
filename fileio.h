@@ -10,8 +10,14 @@
 #endif
 #include <string>
 #include "commandparsertypes.h"
+#include "prime.h"
+
+std::string GetPrimeFileName(AllPrimebotSettings& Settings, int Iterations);
 
 std::string GetPrimeBasePath(AllPrimebotSettings& Settings, int Iterations);
 
-bool WritePrimeToFile(std::string BasePath, std::string Prime);
+bool WritePrimeToSingleFile(std::string BasePath, std::string Name, std::string Prime);
+
+bool WritePrimesToSingleFile(std::string BasePath, std::string Name, mpz_list& Primes);
+bool WritePrimesToSingleFile(std::string BasePath, std::string Name, std::vector<std::string>& Primes);
 
