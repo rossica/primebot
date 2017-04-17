@@ -102,7 +102,7 @@ void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
         // sure there are no gaps.
         // Note: this loop wont be canceled by Quit because it's guaranteed to
         // always reach a terminal state, so it'll always return a full batch.
-        for (unsigned int i = 0; i < BatchSize; i++, workitem += 2)
+        for (unsigned int i = 0; i < BatchSize && !Quit; i++, workitem += 2)
         {
             if (mpz_probab_prime_p(workitem.get_mpz_t(), MillerRabinIterations))
             {
