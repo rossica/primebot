@@ -1,29 +1,33 @@
+Installation For Linux:
+    Use your distro's package manager to make sure you have GMP installed.
+    Then run `make` or `make debug` if you're going to do development.
+    You're all set!
+
 Installation For Windows:
 Windows 64-bit:
     Follow the instructions here for installing MinGW-w64 and MSYS
     http://rperki.blogspot.com/2015/05/installing-mingw-w64-msys-on-win-81-x64.html
 
-    Then, follow the instructions here for MS Windows DLLs:
+    Then, follow the instructions here for MS Windows DLLs (but you're going to build a static lib):
     https://gmplib.org/manual/Notes-for-Particular-Systems.html#Notes-for-Particular-Systems
 
     Summarized:
     Open MSYS console, navigate to where you have GMP source extracted (e.g. /c/gmp/)
-
+    (update the prefix below with the path to where you cloned primebot)
     Run:
-    ./configure --prefix=/c/primebot --host=x86_64-w64-mingw32 --disable-static --enable-shared
+    ./configure --prefix=/c/primebot --host=x86_64-w64-mingw32 --enable-static --disable-shared --enable-cxx
 
     Now run:
-    make -j8
-    make check -j8
-    make install
+    `make -j8`
+    `make check -j8`
+    `make install`
 
-    From Visual Studio developer command prompt, run the following:
-    lib /def:c:\gmp\.libs\libgmp-3.dll.def /machine:x64 /out:c:\primebot\lib\libgmp-3.lib
+    Next, copy libgcc.a from the mingw-w64 installation directory into the
+    primebot/lib folder. This will enable visual studio to link the static lib
+    successfully.
 
-    Next, copy the libgmp-10.dll from the bin directory and put it in the same
-    folder where you will run primebot.exe from.  If you get an error that 
-    libgmp is missing when you run primebot, rename libgmp-10.dll to whatever
-    name the error says is missing. (In my case, it was libgmp-3.dll.dll)
+    The problem is __chkstk_ms, which is emitted by GCC, is not available on
+    Windows, so we must link against Mingw-W64's libgcc to get it.
 
 Windows 32-bit:
     Why are you doing this? :)

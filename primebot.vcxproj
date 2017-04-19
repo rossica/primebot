@@ -89,7 +89,7 @@
     </ClCompile>
     <Link />
     <Link>
-      <AdditionalDependencies>$(ProjectDir)\lib\libgmp-3.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)\lib\libgmp.a;$(ProjectDir)\lib\libgcc.a;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -117,7 +117,7 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(ProjectDir)\lib\libgmp-3.lib;$(ProjectDir)\lib\libgmpxx-3.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)\lib\libgmp.a;$(ProjectDir)\lib\libgcc.a;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

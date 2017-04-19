@@ -6,6 +6,29 @@
 #include "prime.h"
 #include "pal.h"
 
+// Defines for static GMP lib on Windows
+// Solution taken from here: http://stackoverflow.com/questions/30412951/unresolved-external-symbol-imp-fprintf-and-imp-iob-func-sdl2
+#pragma comment(lib, "legacy_stdio_definitions.lib")
+extern "C"
+{
+    FILE * __iob_func()
+    {
+        static FILE* StdFiles[] =
+        {
+            // Filler nullptrs discovered via debugger. The addresses of stdin, stdout, and stderr are
+            // 88 bytes apart. On 64-bit OS, that's 11 pointers.
+            stdin,
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+            stdout,
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+            stderr,
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr
+        };
+
+        return (FILE*) StdFiles;
+    };
+}
+
 extern AllPrimebotSettings ProgramSettings;
 extern NetworkController* Controller;
 extern Primebot* Bot;

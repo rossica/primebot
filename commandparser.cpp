@@ -26,6 +26,10 @@ void CommandParser::PrintHelp()
     std::cout << "  -p / --path: Path to save discovered primes at. Otherwise print to console" << std::endl;
     std::cout << "  -i / --seed: Use <seed> for RNG to find starting number" << std::endl;
     std::cout << "  -b / --bits: Search numbers using at most <count> bits" << std::endl;
+    std::cout << "  --print: Print primes stored in a file given with -p/--path" << std::endl;
+    std::cout << "  --text: Store primes written with -p/--path as text instead of binary" << std::endl;
+    std::cout << "  --batchsize: Count of numbers each thread will test for primality" << std::endl;
+    std::cout << "  --batches: Count of batches to search" << std::endl;
     std::cout << std::endl;
 }
 
@@ -151,6 +155,46 @@ bool CommandParser::ConfigureBits(AllPrimebotSettings& Settings, std::string Bit
     return true;
 }
 
+bool CommandParser::ConfigurePrint(AllPrimebotSettings & Settings)
+{
+    Settings.FileSettings.Flags.Print = true;
+    return true;
+}
+
+bool CommandParser::ConfigureText(AllPrimebotSettings & Settings)
+{
+    Settings.FileSettings.Flags.Binary = false;
+    return true;
+}
+
+bool CommandParser::ConfigureBatchSize(AllPrimebotSettings & Settings, std::string Size)
+{
+    try
+    {
+        Settings.PrimeSettings.BatchSize = std::stoul(Size);
+    }
+    catch (std::invalid_argument& ia)
+    {
+        std::cout << ia.what() << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool CommandParser::ConfigureBatches(AllPrimebotSettings & Settings, std::string Batches)
+{
+    try
+    {
+        Settings.PrimeSettings.BatchCount = std::stoull(Batches);
+    }
+    catch (std::invalid_argument& ia)
+    {
+        std::cout << ia.what() << std::endl;
+        return false;
+    }
+    return true;
+}
+
 CommandParser::CommandParser(int argc, char ** argv) :
     ArgCount(argc),
     Args(argv)
@@ -208,6 +252,26 @@ AllPrimebotSettings CommandParser::ParseArguments()
             CheckIndexValid(i + 1, Args[i]);
             i++;
             ConfigureBits(Settings, Args[i]);
+        }
+        else if (CompareArg("--print", Args[i]))
+        {
+            ConfigurePrint(Settings);
+        }
+        else if (CompareArg("--text", Args[i]))
+        {
+            ConfigureText(Settings);
+        }
+        else if (CompareArg("--batchsize", Args[i]))
+        {
+            CheckIndexValid(i + 1, Args[i]);
+            i++;
+            ConfigureBatchSize(Settings, Args[i]);
+        }
+        else if (CompareArg("--batches", Args[i]))
+        {
+            CheckIndexValid(i + 1, Args[i]);
+            i++;
+            ConfigureBatches(Settings, Args[i]);
         }
         else if (CompareArg("--help", Args[i]) || CompareArg("-h", Args[i]) ||
             CompareArg("-?", Args[i]))

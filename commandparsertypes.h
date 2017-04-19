@@ -59,6 +59,20 @@ struct PrimeFileSettings
 {
     // Directory to store discovered prime numbers in
     std::string Path;
+    struct
+    {
+        // Whether to use binary or text mode to store primes.
+        int Binary : 1;
+        // Whether to just print out primes in file Path
+        int Print : 1;
+    } Flags;
+
+    PrimeFileSettings() :
+        Path()
+    {
+        Flags.Binary = true;
+        Flags.Print = false;
+    }
 };
 
 struct AllPrimebotSettings

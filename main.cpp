@@ -7,6 +7,7 @@
 #include "commandparser.h"
 #include "prime.h"
 #include "pal.h"
+#include "fileio.h"
 
 // Global program state
 // (Currently used for signal handlers)
@@ -62,6 +63,25 @@ int main(int argc, char** argv)
         pb.Start();
 
         pb.WaitForStop();
+    }
+    else if (ProgramSettings.FileSettings.Flags.Print)
+    {
+        mpz_list Primes;
+        if (ProgramSettings.FileSettings.Flags.Binary)
+        {
+            Primes = ReadPrimesFromFileBinary(ProgramSettings.FileSettings.Path);
+        }
+        else
+        {
+            Primes = ReadPrimesFromFile(ProgramSettings.FileSettings.Path);
+        }
+
+        for (mpz_class & p : Primes)
+        {
+            // Compromise: gmp_printf on windows can't figure out the
+            // stdio file handles. But this works fine.
+            gmp_fprintf(stdout, "%Zd\n", p.get_mpz_t());
+        }
     }
     else
     {

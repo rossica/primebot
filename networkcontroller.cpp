@@ -90,7 +90,14 @@ std::string NetworkController::GetPrimeFileName(NetworkClientInfo & ClientInfo)
     Dummy.PrimeSettings.RngSeed = ClientInfo.Seed;
     Dummy.PrimeSettings.Bitsize = ClientInfo.Bitsize;
 
-    return ::GetPrimeFileName(Dummy, ClientInfo.RandomInteration);
+    if (Settings.FileSettings.Flags.Binary)
+    {
+        return ::GetPrimeFileNameBinary(Dummy, ClientInfo.RandomInteration);
+    }
+    else
+    {
+        return ::GetPrimeFileName(Dummy, ClientInfo.RandomInteration);
+    }
 }
 
 void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
@@ -521,11 +528,18 @@ void NetworkController::ProcessIO(ControllerIoInfo Info)
             mpz_class Work(Info.Data.get(), STRING_BASE);
 
             //std::cout << Work << std::endl; // linker error on windows
-            gmp_printf("%Zd\n", Work.get_mpz_t());
+            gmp_fprintf(stdout, "%Zd\n", Work.get_mpz_t());
         }
         else
         {
-            WritePrimeToSingleFile(Settings.FileSettings.Path, Info.Name, Info.Data.get());
+            if (Settings.FileSettings.Flags.Binary)
+            {
+                WritePrimeToSingleFileBinary(Settings.FileSettings.Path, Info.Name, Info.Data.get());
+            }
+            else
+            {
+                WritePrimeToSingleFile(Settings.FileSettings.Path, Info.Name, Info.Data.get());
+            }
         }
     }
     else // batch-work case
@@ -537,12 +551,19 @@ void NetworkController::ProcessIO(ControllerIoInfo Info)
                 mpz_class Work(d, STRING_BASE);
 
                 //std::cout << Work << std::endl; // linker error on windows
-                gmp_printf("%Zd\n", Work.get_mpz_t());
+                gmp_fprintf(stdout, "%Zd\n", Work.get_mpz_t());
             }
         }
         else
         {
-            WritePrimesToSingleFile(Settings.FileSettings.Path, Info.Name, Info.BatchData);
+            if (Settings.FileSettings.Flags.Binary)
+            {
+                WritePrimesToSingleFileBinary(Settings.FileSettings.Path, Info.Name, Info.BatchData);
+            }
+            else
+            {
+                WritePrimesToSingleFile(Settings.FileSettings.Path, Info.Name, Info.BatchData);
+            }
         }
     }
 

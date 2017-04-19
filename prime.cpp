@@ -159,16 +159,26 @@ void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
             for (auto& res : Results)
             {
                 // print results to console
-                gmp_printf("%Zd\n", res.get_mpz_t());
+                gmp_fprintf(stdout, "%Zd\n", res.get_mpz_t());
             }
         }
         else
         {
             // Write out to disk here if file path present
-            WritePrimesToSingleFile(
-                Settings.FileSettings.Path,
-                ::GetPrimeFileName(Settings, 1),
-                Results);
+            if (Settings.FileSettings.Flags.Binary)
+            {
+                WritePrimesToSingleFileBinary(
+                    Settings.FileSettings.Path,
+                    ::GetPrimeFileNameBinary(Settings, 1),
+                    Results);
+            }
+            else
+            {
+                WritePrimesToSingleFile(
+                    Settings.FileSettings.Path,
+                    ::GetPrimeFileName(Settings, 1),
+                    Results);
+            }
         }
     }
 }
