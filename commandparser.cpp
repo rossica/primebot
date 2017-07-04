@@ -18,6 +18,8 @@ void CommandParser::PrintHelp()
     std::cout << "Primebot" << std::endl;
     std::cout << "primebot Usage:" << std::endl;
     std::cout << "primebot [[-c | -s] <addr>] [-a] [-t <cnt>] [-p <path>] [-i <seed>] [-b <cnt>]" << std::endl;
+    std::cout << "         [--batchsize <size>] [--batches <cnt>] [--start <start>]" << std::endl;
+    std::cout << "         [--startbase <base>]" << std::endl;
     std::cout << "primebot [-h | -?]" << std::endl;
     std::cout << "  -c / --client: Configure as a client, connection to server at <address>" << std::endl;
     std::cout << "  -s / --server: Configure as a server" << std::endl;
@@ -30,6 +32,8 @@ void CommandParser::PrintHelp()
     std::cout << "  --text: Store primes written with -p/--path as text instead of binary" << std::endl;
     std::cout << "  --batchsize: Count of numbers each thread will test for primality" << std::endl;
     std::cout << "  --batches: Count of batches to search" << std::endl;
+    std::cout << "  --start: Use <start> to start searching from. Overrides RNG." << std::endl;
+    std::cout << "  --startbase: Numeric base to interpret Start as (valid range is 2-62)" << std::endl;
     std::cout << std::endl;
 }
 
@@ -195,6 +199,32 @@ bool CommandParser::ConfigureBatches(AllPrimebotSettings & Settings, std::string
     return true;
 }
 
+bool CommandParser::ConfigureStartValue(AllPrimebotSettings & Settings, std::string Start)
+{
+    Settings.PrimeSettings.StartValue = Start;
+    return true;
+}
+
+bool CommandParser::ConfigureStartValueBase(AllPrimebotSettings & Settings, std::string StartBase)
+{
+    try
+    {
+        Settings.PrimeSettings.StartValueBase = std::stoull(StartBase);
+        if (Settings.PrimeSettings.StartValueBase < 2 || Settings.PrimeSettings.StartValueBase > 62)
+        {
+            std::cout << "Base for start must be between 2 and 62! You entered: "
+                << Settings.PrimeSettings.StartValueBase << std::endl;
+            return false;
+        }
+    }
+    catch (std::invalid_argument& ia)
+    {
+        std::cout << ia.what() << std::endl;
+        return false;
+    }
+    return true;
+}
+
 CommandParser::CommandParser(int argc, char ** argv) :
     ArgCount(argc),
     Args(argv)
@@ -204,8 +234,9 @@ CommandParser::CommandParser(int argc, char ** argv) :
 AllPrimebotSettings CommandParser::ParseArguments()
 {
     AllPrimebotSettings Settings;
+    bool Result = true;
 
-    for (int i = 1; i < ArgCount; i++)
+    for (int i = 1; i < ArgCount && Result; i++)
     {
         if (i == 0)
         {
@@ -217,61 +248,73 @@ AllPrimebotSettings CommandParser::ParseArguments()
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigureClient(Settings, Args[i]);
+            Result = ConfigureClient(Settings, Args[i]);
         }
         else if (CompareArg("--server", Args[i]) || CompareArg("-s", Args[i]))
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigureServer(Settings, Args[i]);
+            Result = ConfigureServer(Settings, Args[i]);
         }
         else if (CompareArg("--async", Args[i]) || CompareArg("-a", Args[i]))
         {
-            ConfigureAsync(Settings);
+            Result = ConfigureAsync(Settings);
         }
         else if (CompareArg("--threads", Args[i]) || CompareArg("-t", Args[i]))
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigureThreads(Settings, Args[i]);
+            Result = ConfigureThreads(Settings, Args[i]);
         }
         else if (CompareArg("--path", Args[i]) || CompareArg("-p", Args[i]))
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigurePath(Settings, Args[i]);
+            Result = ConfigurePath(Settings, Args[i]);
         }
         else if (CompareArg("--seed", Args[i]) || CompareArg("-i", Args[i]))
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigureSeed(Settings, Args[i]);
+            Result = ConfigureSeed(Settings, Args[i]);
         }
         else if (CompareArg("--bits", Args[i]) || CompareArg("-b", Args[i]))
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigureBits(Settings, Args[i]);
+            Result = ConfigureBits(Settings, Args[i]);
         }
         else if (CompareArg("--print", Args[i]))
         {
-            ConfigurePrint(Settings);
+            Result = ConfigurePrint(Settings);
         }
         else if (CompareArg("--text", Args[i]))
         {
-            ConfigureText(Settings);
+            Result = ConfigureText(Settings);
         }
         else if (CompareArg("--batchsize", Args[i]))
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigureBatchSize(Settings, Args[i]);
+            Result = ConfigureBatchSize(Settings, Args[i]);
         }
         else if (CompareArg("--batches", Args[i]))
         {
             CheckIndexValid(i + 1, Args[i]);
             i++;
-            ConfigureBatches(Settings, Args[i]);
+            Result = ConfigureBatches(Settings, Args[i]);
+        }
+        else if (CompareArg("--start", Args[i]))
+        {
+            CheckIndexValid(i + 1, Args[i]);
+            i++;
+            Result = ConfigureStartValue(Settings, Args[i]);
+        }
+        else if (CompareArg("--startbase", Args[i]))
+        {
+            CheckIndexValid(i + 1, Args[i]);
+            i++;
+            Result = ConfigureStartValueBase(Settings, Args[i]);
         }
         else if (CompareArg("--help", Args[i]) || CompareArg("-h", Args[i]) ||
             CompareArg("-?", Args[i]))
@@ -291,6 +334,13 @@ AllPrimebotSettings CommandParser::ParseArguments()
         }
     }
 
+    if (!Result)
+    {
+        // Error occurred, throw
+        std::cout << "Invalid argument on command line. See above messages for details." << std::endl;
+        Settings.Run = false;
+    }
+
     return Settings;
 }
 
@@ -299,6 +349,8 @@ PrimebotSettings::PrimebotSettings() :
     ThreadCount(std::thread::hardware_concurrency()),
     Bitsize(512),
     RngSeed(1234),
+    StartValue(),
+    StartValueBase(0),
     BatchSize(1000),
     BatchCount(-1)
 {}

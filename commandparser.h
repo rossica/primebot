@@ -21,6 +21,8 @@ private:
     bool ConfigureText(AllPrimebotSettings& Settings);
     bool ConfigureBatchSize(AllPrimebotSettings& Settings, std::string Size);
     bool ConfigureBatches(AllPrimebotSettings& Settings, std::string Batches);
+    bool ConfigureStartValue(AllPrimebotSettings& Settings, std::string Start);
+    bool ConfigureStartValueBase(AllPrimebotSettings& Settings, std::string StartBase);
 public:
     CommandParser(int argc, char** argv);
     AllPrimebotSettings ParseArguments();

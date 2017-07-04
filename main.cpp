@@ -66,22 +66,9 @@ int main(int argc, char** argv)
     }
     else if (ProgramSettings.FileSettings.Flags.Print)
     {
-        mpz_list Primes;
-        if (ProgramSettings.FileSettings.Flags.Binary)
-        {
-            Primes = ReadPrimesFromFileBinary(ProgramSettings.FileSettings.Path);
-        }
-        else
-        {
-            Primes = ReadPrimesFromFile(ProgramSettings.FileSettings.Path);
-        }
+        PrimeFileIo PrimeIo(ProgramSettings);
 
-        for (mpz_class & p : Primes)
-        {
-            // Compromise: gmp_printf on windows can't figure out the
-            // stdio file handles. But this works fine.
-            gmp_fprintf(stdout, "%Zd\n", p.get_mpz_t());
-        }
+        PrimeIo.PrintPrimes();
     }
     else
     {

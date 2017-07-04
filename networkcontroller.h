@@ -19,6 +19,7 @@ typedef int NETSOCK;
 #include <list>
 #include "threadpool.h"
 #include "prime.h"
+#include "fileio.h"
 #include "commandparsertypes.h"
 
 #define CLIENT_PORT (htons(60001))
@@ -98,12 +99,10 @@ struct NetworkClientInfo
 {
     unsigned int Seed;
     unsigned int Bitsize;
-    int RandomInteration;
 };
 
 struct ControllerIoInfo
 {
-    std::string Name;
     std::unique_ptr<char[]> Data;
     std::vector<std::string> BatchData;
 };
@@ -112,6 +111,7 @@ class NetworkController
 {
 private:
     AllPrimebotSettings Settings;
+    PrimeFileIo FileIo;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> CompleteConnections;
     Threadpool<ControllerIoInfo, std::list<ControllerIoInfo>> PendingIo;
@@ -122,7 +122,6 @@ private:
     // helper functions
     std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, size_t Size);
     bool SendPrime(NETSOCK Socket, const char * const Prime, size_t Size);
-    std::string GetPrimeFileName(NetworkClientInfo& ClientInfo);
 
     // handles incoming requests, for client and server
     void HandleRequest(NetworkConnectionInfo ClientSock);

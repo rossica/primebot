@@ -82,24 +82,6 @@ bool NetworkController::SendPrime(NETSOCK Socket, const char * const Prime, size
     return true;
 }
 
-std::string NetworkController::GetPrimeFileName(NetworkClientInfo & ClientInfo)
-{
-    AllPrimebotSettings Dummy;
-
-    Dummy.FileSettings.Path = Settings.FileSettings.Path;
-    Dummy.PrimeSettings.RngSeed = ClientInfo.Seed;
-    Dummy.PrimeSettings.Bitsize = ClientInfo.Bitsize;
-
-    if (Settings.FileSettings.Flags.Binary)
-    {
-        return ::GetPrimeFileNameBinary(Dummy, ClientInfo.RandomInteration);
-    }
-    else
-    {
-        return ::GetPrimeFileName(Dummy, ClientInfo.RandomInteration);
-    }
-}
-
 void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
 {
     if (!IsSocketValid(ClientSock.ClientSocket))
@@ -265,7 +247,6 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, Net
     auto RandomInfo = Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
     mpz_class Work(RandomInfo.first);
 
-    ClientInfo.RandomInteration = RandomInfo.second;
     ClientInfo.Bitsize = Settings.PrimeSettings.Bitsize;
     ClientInfo.Seed = Settings.PrimeSettings.RngSeed;
 
@@ -337,15 +318,8 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
         return;
     }
 
-    if (!Settings.FileSettings.Path.empty())
-    {
-        // write Data to file
-        PendingIo.EnqueueWorkItem({ GetPrimeFileName(ClientInfo), std::move(Data) });
-    }
-    else
-    {
-        PendingIo.EnqueueWorkItem({ "", std::move(Data) });
-    }
+    PendingIo.EnqueueWorkItem({ std::move(Data) });
+
 }
 
 bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
@@ -438,15 +412,8 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
     // Enqueue work to a threadpool to actually handle the file IO, since
     // that may be slow. The server should have enough memory to hold all
     // the data until it is written out.
-    if (!Settings.FileSettings.Path.empty())
-    {
-        // write Data to file
-        PendingIo.EnqueueWorkItem({ GetPrimeFileName(ClientInfo), nullptr, std::move(BatchData) });
-    }
-    else
-    {
-        PendingIo.EnqueueWorkItem({ "", nullptr, std::move(BatchData) });
-    }
+    PendingIo.EnqueueWorkItem({ nullptr, std::move(BatchData) });
+
 }
 
 void NetworkController::UnregisterClient()
@@ -523,7 +490,7 @@ void NetworkController::ProcessIO(ControllerIoInfo Info)
     // Single-item case
     if (Info.Data != nullptr)
     {
-        if (Info.Name.empty())
+        if (Settings.FileSettings.Path.empty())
         {
             mpz_class Work(Info.Data.get(), STRING_BASE);
 
@@ -532,19 +499,12 @@ void NetworkController::ProcessIO(ControllerIoInfo Info)
         }
         else
         {
-            if (Settings.FileSettings.Flags.Binary)
-            {
-                WritePrimeToSingleFileBinary(Settings.FileSettings.Path, Info.Name, Info.Data.get());
-            }
-            else
-            {
-                WritePrimeToSingleFile(Settings.FileSettings.Path, Info.Name, Info.Data.get());
-            }
+            FileIo.WritePrime(Info.Data.get());
         }
     }
     else // batch-work case
     {
-        if (Info.Name.empty())
+        if (Settings.FileSettings.Path.empty())
         {
             for (std::string & d : Info.BatchData)
             {
@@ -556,14 +516,7 @@ void NetworkController::ProcessIO(ControllerIoInfo Info)
         }
         else
         {
-            if (Settings.FileSettings.Flags.Binary)
-            {
-                WritePrimesToSingleFileBinary(Settings.FileSettings.Path, Info.Name, Info.BatchData);
-            }
-            else
-            {
-                WritePrimesToSingleFile(Settings.FileSettings.Path, Info.Name, Info.BatchData);
-            }
+            FileIo.WritePrimes(Info.BatchData);
         }
     }
 
@@ -708,6 +661,7 @@ NETSOCK NetworkController::GetSocketToServer()
 
 NetworkController::NetworkController(AllPrimebotSettings Config) :
     Settings(Config),
+    FileIo(Settings),
     OutstandingConnections(
         std::thread::hardware_concurrency(),
         std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1)),

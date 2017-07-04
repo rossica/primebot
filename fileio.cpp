@@ -21,39 +21,39 @@
 
 #define STRING_BASE (62)
 
-std::string GetBasePrimeFileName(AllPrimebotSettings& Settings, int Iterations)
+std::string GetBasePrimeFileName(const AllPrimebotSettings& Settings)
 {
-    return
-        std::to_string(Settings.PrimeSettings.Bitsize)
-        + "-"
-        + std::to_string(Settings.PrimeSettings.RngSeed)
-        + "-"
-        + std::to_string(Iterations);
+    if (Settings.PrimeSettings.StartValue.empty())
+    {
+        return
+            std::to_string(Settings.PrimeSettings.Bitsize)
+            + "-"
+            + std::to_string(Settings.PrimeSettings.RngSeed);
+    }
+    else
+    {
+        return
+            Settings.PrimeSettings.StartValue
+            + "-"
+            + std::to_string(Settings.PrimeSettings.StartValueBase);
+    }
 }
 
-std::string GetPrimeFileName(AllPrimebotSettings& Settings, int Iterations)
+std::string GetPrimeFileName(const AllPrimebotSettings& Settings)
 {
     return
-        GetBasePrimeFileName(Settings, Iterations)
+        GetBasePrimeFileName(Settings)
         + ".txt";
 }
 
-std::string GetPrimeFileNameBinary(AllPrimebotSettings& Settings, int Iterations)
+std::string GetPrimeFileNameBinary(const AllPrimebotSettings& Settings)
 {
     return
-        GetBasePrimeFileName(Settings, Iterations)
+        GetBasePrimeFileName(Settings)
         + ".bin";
 }
 
-std::string GetPrimeBasePath(AllPrimebotSettings& Settings, int Iterations)
-{
-    return
-        Settings.FileSettings.Path
-            + "/"
-            + GetBasePrimeFileName(Settings, Iterations);
-}
-
-bool WritePrimeToSingleFile(std::string BasePath, std::string Name, std::string Prime)
+bool PrimeFileIo::WritePrimeToSingleFile(std::string BasePath, std::string Name, std::string Prime)
 {
     bool Result;
 
@@ -79,12 +79,10 @@ bool WritePrimeToSingleFile(std::string BasePath, std::string Name, std::string 
     return !File.fail();
 }
 
-bool WritePrimeToSingleFileBinary(std::string BasePath, std::string Name, std::string Prime)
+bool PrimeFileIo::WritePrimeToSingleFileBinary(std::string BasePath, std::string Name, std::string Prime)
 {
     std::FILE* PrimeFile = nullptr;
     bool Result;
-    bool WriteFirst = false;
-    mpz_class First;
 
     Result = MakeDirectory(BasePath.c_str());
     if (!Result)
@@ -113,27 +111,34 @@ bool WritePrimeToSingleFileBinary(std::string BasePath, std::string Name, std::s
 
     if (std::ftell(PrimeFile) == 0)
     {
-        WriteFirst = true;
         std::rewind(PrimeFile);
     }
     else
     {
         // Read the first prime from the file.
-        std::rewind(PrimeFile);
-        if (!mpz_inp_raw(First.get_mpz_t(), PrimeFile))
+        if (First == 0)
         {
-            std::cerr << "Failed reading prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
-            std::fclose(PrimeFile);
-            return false;
+            std::rewind(PrimeFile);
+            if (!mpz_inp_raw(First.get_mpz_t(), PrimeFile))
+            {
+                std::cerr << "Failed reading prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
+                std::fclose(PrimeFile);
+                return false;
+            }
         }
+        // assumption: First is never != 0 here
         std::rewind(PrimeFile);
     }
 
     mpz_class Current(Prime, STRING_BASE);
 
-    if (!WriteFirst)
+    if (First != 0)
     {
         Current -= First;
+    }
+    else
+    {
+        First = Current;
     }
 
     if (mpz_out_raw(PrimeFile, Current.get_mpz_t()) == 0)
@@ -148,7 +153,7 @@ bool WritePrimeToSingleFileBinary(std::string BasePath, std::string Name, std::s
     return true;
 }
 
-bool WritePrimesToSingleFile(std::string BasePath, std::string Name, mpz_list& Primes)
+bool PrimeFileIo::WritePrimesToSingleFile(std::string BasePath, std::string Name, mpz_list& Primes)
 {
     bool Result;
 
@@ -177,7 +182,7 @@ bool WritePrimesToSingleFile(std::string BasePath, std::string Name, mpz_list& P
     return !File.fail();
 }
 
-bool WritePrimesToSingleFile(std::string BasePath, std::string Name, std::vector<std::string>& Primes)
+bool PrimeFileIo::WritePrimesToSingleFile(std::string BasePath, std::string Name, std::vector<std::string>& Primes)
 {
     bool Result;
 
@@ -206,7 +211,7 @@ bool WritePrimesToSingleFile(std::string BasePath, std::string Name, std::vector
     return !File.fail();
 }
 
-mpz_list ReadPrimesFromFile(std::string FullFilePath)
+mpz_list PrimeFileIo::ReadPrimesFromFile(std::string FullFilePath)
 {
     mpz_list Primes;
     mpz_class Current;
@@ -241,12 +246,10 @@ mpz_list ReadPrimesFromFile(std::string FullFilePath)
     return Primes;
 }
 
-bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, mpz_list& Primes)
+bool PrimeFileIo::WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, mpz_list& Primes)
 {
     std::FILE* PrimeFile = nullptr;
     bool Result;
-    bool WriteFirst = false;
-    mpz_class First;
 
     Result = MakeDirectory(BasePath.c_str());
     if (!Result)
@@ -275,27 +278,28 @@ bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, mpz_l
 
     if (std::ftell(PrimeFile) == 0)
     {
-        WriteFirst = true;
         std::rewind(PrimeFile);
     }
     else
     {
-        // Read the first prime from the file.
-        std::rewind(PrimeFile);
-        if (!mpz_inp_raw(First.get_mpz_t(), PrimeFile))
+        if (First == 0)
         {
-            std::cerr << "Failed reading prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
-            std::fclose(PrimeFile);
-            return false;
+            // Read the first prime from the file.
+            std::rewind(PrimeFile);
+            if (!mpz_inp_raw(First.get_mpz_t(), PrimeFile))
+            {
+                std::cerr << "Failed reading prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
+                std::fclose(PrimeFile);
+                return false;
+            }
         }
+        // assumption: First is never != 0 here
         std::rewind(PrimeFile);
     }
 
-
-
     for (mpz_class& p : Primes)
     {
-        if (WriteFirst)
+        if (First == 0)
         {
             // The file is new! Write the first prime
             if (mpz_out_raw(PrimeFile, p.get_mpz_t()) == 0)
@@ -307,7 +311,6 @@ bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, mpz_l
 
             First = p;
 
-            WriteFirst = false;
         }
         else
         {
@@ -331,12 +334,10 @@ bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, mpz_l
     return true;
 }
 
-bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, std::vector<std::string>& Primes)
+bool PrimeFileIo::WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, std::vector<std::string>& Primes)
 {
     std::FILE* PrimeFile = nullptr;
     bool Result;
-    bool WriteFirst = false;
-    mpz_class First;
 
     Result = MakeDirectory(BasePath.c_str());
     if (!Result)
@@ -365,19 +366,22 @@ bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, std::
 
     if (std::ftell(PrimeFile) == 0)
     {
-        WriteFirst = true;
         std::rewind(PrimeFile);
     }
     else
     {
-        // Read the first prime from the file.
-        std::rewind(PrimeFile);
-        if (!mpz_inp_raw(First.get_mpz_t(), PrimeFile))
+        if (First == 0)
         {
-            std::cerr << "Failed reading prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
-            std::fclose(PrimeFile);
-            return false;
+            // Read the first prime from the file.
+            std::rewind(PrimeFile);
+            if (!mpz_inp_raw(First.get_mpz_t(), PrimeFile))
+            {
+                std::cerr << "Failed reading prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
+                std::fclose(PrimeFile);
+                return false;
+            }
         }
+        // assumption: First is never != 0 here
         std::rewind(PrimeFile);
     }
 
@@ -386,7 +390,7 @@ bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, std::
         // This is inefficient, but there's no way around it.
         mpz_class Current(pstr, STRING_BASE);
 
-        if (WriteFirst)
+        if (First == 0)
         {
             // The file is new! Write the first prime
             if (mpz_out_raw(PrimeFile, Current.get_mpz_t()) == 0)
@@ -398,7 +402,6 @@ bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, std::
 
             First = Current;
 
-            WriteFirst = false;
         }
         else
         {
@@ -420,10 +423,9 @@ bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, std::
     return true;
 }
 
-mpz_list ReadPrimesFromFileBinary(std::string FullFilePath)
+mpz_list PrimeFileIo::ReadPrimesFromFileBinary(std::string FullFilePath)
 {
     mpz_list Primes;
-    mpz_class First;
     mpz_class Current;
 
     std::FILE* PrimeFile = std::fopen(FullFilePath.c_str(), "rb");
@@ -466,4 +468,86 @@ mpz_list ReadPrimesFromFileBinary(std::string FullFilePath)
     std::fclose(PrimeFile);
 
     return Primes;
+}
+
+PrimeFileIo::PrimeFileIo(const AllPrimebotSettings & Settings) :
+    First(0),
+    Settings(Settings)
+{
+    if (Settings.FileSettings.Flags.Binary)
+    {
+        FileName = ::GetPrimeFileNameBinary(Settings);
+    }
+    else
+    {
+        FileName = ::GetPrimeFileName(Settings);
+    }
+}
+
+mpz_list PrimeFileIo::ReadPrimes()
+{
+    if (Settings.FileSettings.Flags.Binary)
+    {
+        return ReadPrimesFromFileBinary(Settings.FileSettings.Path);
+    }
+    else
+    {
+        return ReadPrimesFromFile(Settings.FileSettings.Path);
+    }
+}
+
+bool PrimeFileIo::WritePrime(std::string Prime)
+{
+    if (Settings.FileSettings.Flags.Binary)
+    {
+        return WritePrimeToSingleFileBinary(Settings.FileSettings.Path, FileName, Prime);
+    }
+    else
+    {
+        return WritePrimeToSingleFile(Settings.FileSettings.Path, FileName, Prime);
+    }
+}
+
+bool PrimeFileIo::WritePrimes(mpz_list & Primes)
+{
+    if (Settings.FileSettings.Flags.Binary)
+    {
+        return WritePrimesToSingleFileBinary(Settings.FileSettings.Path, FileName, Primes);
+    }
+    else
+    {
+        return WritePrimesToSingleFile(Settings.FileSettings.Path, FileName, Primes);
+    }
+}
+
+bool PrimeFileIo::WritePrimes(std::vector<std::string>& Primes)
+{
+    if (Settings.FileSettings.Flags.Binary)
+    {
+        return WritePrimesToSingleFileBinary(Settings.FileSettings.Path, FileName, Primes);
+    }
+    else
+    {
+        return WritePrimesToSingleFile(Settings.FileSettings.Path, FileName, Primes);
+    }
+}
+
+void PrimeFileIo::PrintPrimes()
+{
+    mpz_list Primes;
+    if (Settings.FileSettings.Flags.Binary)
+    {
+        Primes = ReadPrimesFromFileBinary(Settings.FileSettings.Path);
+    }
+    else
+    {
+        Primes = ReadPrimesFromFile(Settings.FileSettings.Path);
+    }
+
+    for (mpz_class & p : Primes)
+    {
+        // Compromise: gmp_printf on windows can't figure out the
+        // stdio file handles. But this works fine.
+        gmp_fprintf(stdout, "%Zd\n", p.get_mpz_t());
+    }
 }

@@ -50,6 +50,19 @@ std::pair<mpz_class, int> Primebot::GenerateRandomOdd(unsigned int Bits, unsigne
     return std::make_pair(std::move(Work), PreviousIteration + 1);
 }
 
+mpz_class Primebot::GetInitialWorkitem(AllPrimebotSettings& Settings)
+{
+    if (Settings.PrimeSettings.StartValue.empty())
+    {
+        auto RandomWork = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
+        return RandomWork.first;
+    }
+    else
+    {
+        return mpz_class(Settings.PrimeSettings.StartValue, Settings.PrimeSettings.StartValueBase);
+    }
+}
+
 std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
 {
     // Convert the prime into a nicer list of powers of two?
@@ -165,20 +178,7 @@ void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
         else
         {
             // Write out to disk here if file path present
-            if (Settings.FileSettings.Flags.Binary)
-            {
-                WritePrimesToSingleFileBinary(
-                    Settings.FileSettings.Path,
-                    ::GetPrimeFileNameBinary(Settings, 1),
-                    Results);
-            }
-            else
-            {
-                WritePrimesToSingleFile(
-                    Settings.FileSettings.Path,
-                    ::GetPrimeFileName(Settings, 1),
-                    Results);
-            }
+            FileIo.WritePrimes(Results);
         }
     }
 }
@@ -197,6 +197,7 @@ void Primebot::ProcessIo(std::unique_ptr<mpz_list_list> && data)
 Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
     Controller(NetController),
     Settings(Config),
+    FileIo(Settings),
     Threads(Config.PrimeSettings.ThreadCount),
     IoPool(1,
         std::bind(&Primebot::ProcessIo, this, std::placeholders::_1)),
@@ -236,8 +237,7 @@ void Primebot::Start()
     else
     {
         // Stand-alone mode, generate starting prime
-        auto RandomWork = GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
-        Start = RandomWork.first;
+        Start = GetInitialWorkitem(Settings);
     }
 
     if (Settings.PrimeSettings.UseAsync)
