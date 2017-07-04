@@ -136,6 +136,7 @@
     <ClInclude Include="commandparser.h" />
     <ClInclude Include="commandparsertypes.h" />
     <ClInclude Include="fileio.h" />
+    <ClInclude Include="gmpwrapper.h" />
     <ClInclude Include="networkcontroller.h" />
     <ClInclude Include="numberSet.h" />
     <ClInclude Include="onelockthreadpool.h" />

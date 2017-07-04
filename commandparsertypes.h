@@ -47,6 +47,10 @@ struct PrimebotSettings
     unsigned int Bitsize;
     // Optional seed for the RNG to generate numbers to search
     unsigned int RngSeed;
+    // Optional starting number. If specified, RNG is not used.
+    std::string StartValue;
+    // Numeric Base of the given StartValue
+    unsigned int StartValueBase;
     // Count of primes in each batch sent to server
     unsigned int BatchSize;
     // Total count of batches to find and send
