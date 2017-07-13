@@ -10,18 +10,18 @@ private:
     const AllPrimebotSettings& Settings;
     std::string FileName;
 
-    bool WritePrimeToSingleFile(std::string BasePath, std::string Name, std::string Prime);
-    bool WritePrimeToSingleFileBinary(std::string BasePath, std::string Name, std::string Prime);
+    bool WritePrimeToTextFile(std::string BasePath, std::string Name, std::string Prime);
+    bool WritePrimeToBinaryFile(std::string BasePath, std::string Name, std::string Prime);
 
-    bool WritePrimesToSingleFile(std::string BasePath, std::string Name, mpz_list& Primes);
-    bool WritePrimesToSingleFile(std::string BasePath, std::string Name, std::vector<std::string>& Primes);
+    bool WritePrimesToTextFile(std::string BasePath, std::string Name, mpz_list& Primes);
+    bool WritePrimesToTextFile(std::string BasePath, std::string Name, std::vector<std::unique_ptr<char[]>>& Primes);
 
-    mpz_list ReadPrimesFromFile(std::string FullFilePath);
+    mpz_list ReadPrimesFromTextFile(std::string FullFilePath);
 
-    bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, mpz_list& Primes);
-    bool WritePrimesToSingleFileBinary(std::string BasePath, std::string Name, std::vector<std::string>& Primes);
+    bool WritePrimesToBinaryFile(std::string BasePath, std::string Name, mpz_list& Primes);
+    bool WritePrimesToBinaryFile(std::string BasePath, std::string Name, std::vector<std::unique_ptr<char[]>>& Primes);
 
-    mpz_list ReadPrimesFromFileBinary(std::string FullFilePath);
+    mpz_list ReadPrimesFromBinaryFile(std::string FullFilePath);
 
 public:
     PrimeFileIo(const AllPrimebotSettings& Settings);
@@ -31,7 +31,7 @@ public:
     bool WritePrime(std::string Prime);
 
     bool WritePrimes(mpz_list& Primes);
-    bool WritePrimes(std::vector<std::string>& Primes);
+    bool WritePrimes(std::vector<std::unique_ptr<char[]>>& Primes);
 
     void PrintPrimes();
 };
