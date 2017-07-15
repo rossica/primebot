@@ -29,6 +29,7 @@ inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 #include <future>
 #include <iostream>
 #include <sstream>
+#include <cassert>
 
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -36,6 +37,20 @@ inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 #elif defined __linux__
 #define ReportError(Msg) std::cerr << strerror(errno) << " at " << __FUNCTION__ << Msg << std::endl
 #endif
+
+template<class Alpha, class Type>
+void CalculateMovingAverage(Type& Accumulator, const Type& Value)
+{
+    typedef std::ratio<1, 1> One;
+    // Validate that 0 <= Alpha <= 1.
+    static_assert(std::ratio_less_equal<Alpha, One>::value && std::ratio_greater_equal<Alpha, std::ratio<0, 1>>::value,
+        "Alpha must be in the range [0,1]");
+
+    typedef std::ratio_subtract<One, Alpha> alphaComplement;
+
+    //Accumulator = std::chrono::duration_cast<std::chrono::steady_clock::duration>((a * Value) + ((1.0 - a) * Accumulator));
+    Accumulator = ((Alpha::num * Value) / Alpha::den) + ((alphaComplement::num * Accumulator) / alphaComplement::den);
+}
 
 std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, size_t Size)
 {
@@ -82,7 +97,187 @@ bool NetworkController::SendPrime(NETSOCK Socket, const char * const Prime, size
     return true;
 }
 
-void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
+uint64_t NetworkController::ReceiveId(NETSOCK Socket)
+{
+    uint64_t Id;
+    NETSOCK Result = recv(Socket, (char*)&Id, sizeof(Id), 0);
+    if (!IsSocketValid(Result) || Result == 0)
+    {
+        ReportError(" failed to recv Id");
+        return INVALID_ID;
+    }
+
+    Id = ntohll(Id);
+
+    return Id;
+}
+
+bool NetworkController::SendId(NETSOCK Socket, uint64_t Id)
+{
+    Id = htonll(Id);
+
+    NETSOCK Result = send(Socket, (char*)&Id, sizeof(Id), 0);
+    if (!IsSocketValid(Result))
+    {
+        ReportError(" send ID");
+        return false;
+    }
+
+    return true;
+}
+
+uint32_t NetworkController::ReceiveOffset(NETSOCK Socket)
+{
+    uint32_t Offset;
+    NETSOCK Result = recv(Socket, (char*)&Offset, sizeof(Offset), 0);
+    if (!IsSocketValid(Result))
+    {
+        ReportError(" failed to recv Offset");
+        return 0;
+    }
+
+    Offset = ntohl(Offset);
+
+    return Offset;
+}
+
+bool NetworkController::SendOffset(NETSOCK Socket, uint32_t Offset)
+{
+    Offset = htonl(Offset);
+
+    NETSOCK Result = send(Socket, (char*)&Offset, sizeof(Offset), 0);
+    if (!IsSocketValid(Result))
+    {
+        ReportError(" send Offset");
+        return false;
+    }
+
+    return true;
+}
+
+NetworkPendingWorkitem& NetworkController::CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client)
+{
+    auto Now = std::chrono::steady_clock::now();
+    // TODO: growth function for batchsize relative to prime magnitude:
+    //      (BatchSize * WorkitemCount) * bitsize-of-prime * ln(2)
+    // However, this means that BatchSize reflects about how many primes will
+    // be found; i.e. instead of specifying the size of the work, it specifies
+    // the size of the result, which is unintuitive. Come back to this decision.
+    // It also doesn't guarantee that WorkitemSize is even.
+    auto WorkitemSize = Settings.PrimeSettings.BatchSize * WorkitemCount;
+
+    // Take lock now.
+    std::lock_guard<std::mutex> lock(OutstandingWorkitemsLock);
+
+    // Determine if OutstandingWorkitems.front() has not returned recently enough
+    // and use that instead of NextWorkitem. This requires invalidating the existing
+    // workitem.
+    // Specifically:
+    // * Are there outstanding workitems?
+    // * The workitem hasn't already been received
+    // * Has it been at least 10 seconds?
+    // * Has it been more than twice the average workitem completion time for this client?
+    // * Has it been more than twice the average workitem completion time for all clients?
+    // * Does the client exist in the list of registered clients anymore?
+    //
+    // Rejected thoughts below:
+    // * can't use outstandingworkitems vs. clients b/c 1 client may have many threads
+    // * can't use workitems are received, b/c what if none are?
+    // * can't use average completion time for all clients > 0 b/c what if none return?
+    if (OutstandingWorkitems.size() > 0 &&
+        OutstandingWorkitems.front().Received == false &&
+        (((Now - OutstandingWorkitems.front().Timestamp) > std::chrono::seconds(10) &&
+        (Now - OutstandingWorkitems.front().Timestamp) > (2 * OutstandingWorkitems.front().Client->AvgCompletionTime) &&
+        (Now - OutstandingWorkitems.front().Timestamp) > (2 * AvgClientCompletionTime)) ||
+        Clients.find(OutstandingWorkitems.front().Client->Key) == Clients.end()))
+    {
+        NetworkPendingWorkitem& ExistingWorkitemRef = OutstandingWorkitems.front();
+
+        // Remove from existing client.
+        ExistingWorkitemRef.Client->AssignedWorkitemsLock.lock();
+        ExistingWorkitemRef.Client->AssignedWorkitems.erase(ExistingWorkitemRef.Id);
+        ExistingWorkitemRef.Client->AssignedWorkitemsLock.unlock();
+
+        // Assign to current client.
+        Client->AssignedWorkitems.emplace(ExistingWorkitemRef.Id, &ExistingWorkitemRef);
+
+        Client->TotalAssignedWorkitems++;
+        OutstandingWorkitems.front().Timestamp = Now;
+
+        return ExistingWorkitemRef;
+    }
+
+    NetworkPendingWorkitem Workitem(NextWorkitem, WorkitemSize, Client);
+
+    // Increment workitem for next request.
+    NextWorkitem += WorkitemSize;
+
+    // Add Workitem to list of outstanding workitems.
+    OutstandingWorkitems.push_back(Workitem);
+
+    NetworkPendingWorkitem& PersistentWorkitemRef = OutstandingWorkitems.back();
+
+    // Get address of instance inserted into list.
+    Client->AssignedWorkitems.emplace(PersistentWorkitemRef.Id, &PersistentWorkitemRef);
+
+    Client->TotalAssignedWorkitems++;
+
+    return PersistentWorkitemRef;
+}
+
+bool NetworkController::CleanupWorkitem(ControllerIoInfo& Info)
+{
+    std::lock_guard<std::mutex> lock(OutstandingWorkitemsLock);
+
+    auto& Front = OutstandingWorkitems.front();
+
+    if (Front.Id == Info.Id)
+    {
+        assert(Front.Client.get() == Info.ReportingClient.get());
+
+        // Find and remove the workitem from the client info.
+        Front.Client->AssignedWorkitemsLock.lock();
+        Front.Client->AssignedWorkitems.erase(Front.Id);
+        Front.Client->AssignedWorkitemsLock.unlock();
+
+        // Update client statistics.
+        Front.Client->TotalCompletedWorkitems++;
+        CalculateMovingAverage<NetworkClientInfo::MeanWeight>(Front.Client->AvgCompletionTime, Info.ReceivedTime - Front.Timestamp);
+
+        // Update controller statistics.
+        CalculateMovingAverage<NetworkController::MeanWeight>(AvgClientCompletionTime,  Info.ReceivedTime - Front.Timestamp);
+
+        // Remove the completed workitem from the list of outstanding work.
+        OutstandingWorkitems.pop_front();
+
+        // This is the current workitem; indicate so to the caller.
+        return true;
+    }
+    // Not the current workitem, so return without cleaning up.
+    return false;
+}
+
+int NetworkController::LivingClientsCount()
+{
+    auto Now = std::chrono::steady_clock::now();
+    int count = 0;
+
+    for (auto& c : Clients)
+    {
+        if (!c.second->Zombie &&
+            (Now - c.second->LastReceivedTime) < (3 * c.second->AvgCompletionTime))
+        {
+            // Assume client is still living and include in count
+            count++;
+        }
+    }
+
+    return count;
+}
+
+
+
+void NetworkController::HandleRequest(NetworkConnectionInfo&& ClientSock)
 {
     if (!IsSocketValid(ClientSock.ClientSocket))
     {
@@ -105,7 +300,7 @@ void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
     switch (Header.Type)
     {
     case NetworkMessageType::RegisterClient:
-        if (Clients.find(ClientSock.addr.IPv6) == Clients.end())
+        if (Client == Clients.end())
         {
             HandleRegisterClient(ClientSock);
         }
@@ -126,12 +321,6 @@ void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
             HandleReportWork(ClientSock, Header.Size, Client->second);
         }
         break;
-    case NetworkMessageType::BatchReportWork:
-        if (Client != Clients.end())
-        {
-            HandleBatchReportWork(ClientSock, Header.Size, Client->second);
-        }
-        break;
     case NetworkMessageType::UnregisterClient:
         if (Client != Clients.end())
         {
@@ -147,23 +336,8 @@ void NetworkController::HandleRequest(NetworkConnectionInfo ClientSock)
     default:
         return;
     }
-    
-    if (Settings.NetworkSettings.Server)
-    {
-        // Queue the client socket to be shutdown and closed asynchronously
-        CompleteConnections.EnqueueWorkItem(std::move(ClientSock));
-    }
-    else if (Settings.NetworkSettings.Client)
-    {
-        // When finished, close the socket
-        shutdown(ClientSock.ClientSocket, SD_BOTH);
-        closesocket(ClientSock.ClientSocket);
-    }
-}
 
-void NetworkController::CleanupRequest(NetworkConnectionInfo ClientSock)
-{
-    // When finished, close the client socket
+    // When finished, close the socket
     shutdown(ClientSock.ClientSocket, SD_BOTH);
     closesocket(ClientSock.ClientSocket);
 }
@@ -188,34 +362,59 @@ bool NetworkController::RegisterClient()
 void NetworkController::HandleRegisterClient(NetworkConnectionInfo& ClientSock)
 {
     // This should also copy the IPv4 data if it's only IPv4.
-    Clients.insert(std::make_pair<AddressType, NetworkClientInfo>(ClientSock.addr.IPv6, {}));
+    auto InsertedClient =
+        Clients.emplace(
+            ClientSock.addr.IPv6,
+            std::make_shared<NetworkClientInfo>());
+
+    if (InsertedClient.second)
+    {
+        // If insertion succeeded, copy the key to the client
+        InsertedClient.first->second->Key = InsertedClient.first->first;
+    }
 
     std::cout << "Registered client: " << ClientSock.addr.ToString() << std::endl;
 }
 
-mpz_class NetworkController::RequestWork()
+ClientWorkitem NetworkController::RequestWork(uint16_t Count)
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::RequestWork;
+    Header.Size = sizeof(Count);
+    ClientWorkitem Workitem;
 
     Result = send(Socket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result))
     {
         ReportError(" send header");
         closesocket(Socket);
-        return mpz_class();
+        return ClientWorkitem();
     }
 
+    // Convert to network byte-order.
+    Count = htons(Count);
+
+    // Send message requesting Count number of workitems
+    Result = send(Socket, (char*)&Count, sizeof(Count), 0);
+    if (!IsSocketValid(Result))
+    {
+        ReportError(" send request");
+        closesocket(Socket);
+        return ClientWorkitem();
+    }
+
+    // done sending, close send
     shutdown(Socket, SD_SEND);
 
+    // Receive the response header
     Result = recv(Socket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result) || Result == 0)
     {
         ReportError(" recv header");
         closesocket(Socket);
-        return mpz_class();
+        return ClientWorkitem();
     }
 
     Header.Size = ntohl(Header.Size);
@@ -224,38 +423,77 @@ mpz_class NetworkController::RequestWork()
     {
         ReportError(" header size invalid");
         closesocket(Socket);
-        return mpz_class();
+        return ClientWorkitem();
+    }
+
+    Workitem.Id = ReceiveId(Socket);
+    if (Workitem.Id == INVALID_ID)
+    {
+        ReportError(" invalid ID");
+        closesocket(Socket);
+        return ClientWorkitem();
+    }
+
+    Workitem.Offset = ReceiveOffset(Socket);
+    if (Workitem.Offset == 0)
+    {
+        ReportError(" invalid offset");
+        closesocket(Socket);
+        return ClientWorkitem();
     }
 
     std::unique_ptr<char[]> Data(ReceivePrime(Socket, Header.Size));
 
-    // Initialize the Workitem with the string returned from the server.
-    mpz_class WorkItem(Data.get(), STRING_BASE);
-    std::cout << "bit-length of start number: " << mpz_sizeinbase(WorkItem.get_mpz_t(), 2) << std::endl;
+    if (Data == nullptr)
+    {
+        ReportError(" empty start prime");
+        closesocket(Socket);
+        return ClientWorkitem();
+    }
 
+    // Initialize the Workitem with the string returned from the server.
+    Workitem.Start = mpz_class(Data.get(), STRING_BASE);
+
+    // done receiving, close recv
+    shutdown(Socket, SD_RECEIVE);
     closesocket(Socket);
-    return std::move(WorkItem);
+
+    if (mpz_even_p(Workitem.Start.get_mpz_t()))
+    {
+        std::cout << "Server gave us an even number!!" << std::endl;
+    }
+
+    return Workitem;
 }
 
-void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, NetworkClientInfo& ClientInfo)
+void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, std::shared_ptr<NetworkClientInfo> ClientInfo)
 {
     NetworkHeader Header = { 0 };
     size_t Size;
     NETSOCK Result;
+    uint16_t Count;
 
-    // Generate prime number to send to client
-    auto RandomInfo = Primebot::GenerateRandomOdd(Settings.PrimeSettings.Bitsize, Settings.PrimeSettings.RngSeed);
-    mpz_class Work(RandomInfo.first);
+    // Receive the requested amount of work
+    Result = recv(ClientSock.ClientSocket, (char*)&Count, sizeof(Count), 0);
+    if (!IsSocketValid(Result) || Result == 0)
+    {
+        ReportError(" recv count");
+        closesocket(ClientSock.ClientSocket);
+        return;
+    }
 
-    ClientInfo.Bitsize = Settings.PrimeSettings.Bitsize;
-    ClientInfo.Seed = Settings.PrimeSettings.RngSeed;
+    // Convert count back to host byte-order.
+    Count = ntohs(Count);
 
-    Size = mpz_sizeinbase(Work.get_mpz_t(), STRING_BASE) + 2;
+    // Get prime number to send to client
+    NetworkPendingWorkitem& Work = CreateWorkitem(Count, ClientInfo);
+
+    Size = mpz_sizeinbase(Work.Start.get_mpz_t(), STRING_BASE) + 2;
 
     Header.Type = NetworkMessageType::WorkItem;
     Header.Size = htonl((unsigned int) Size);
 
-    // Tell client how large data is
+    // Send header to client
     Result = send(ClientSock.ClientSocket, (char*)&Header, sizeof(Header), 0);
     if (!IsSocketValid(Result))
     {
@@ -263,75 +501,38 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, Net
         return;
     }
 
+    // Send ID to client
+    if (!SendId(ClientSock.ClientSocket, Work.Id))
+    {
+        ReportError(" send id");
+        return;
+    }
+
+    // Send offset to client
+    if (!SendOffset(ClientSock.ClientSocket, Work.Range))
+    {
+        ReportError(" send offset");
+        return;
+    }
+
     // send number back to requestor
-    std::string Data = Work.get_str(STRING_BASE);
+    std::string Data = Work.Start.get_str(STRING_BASE);
 
     // Send data now
     SendPrime(ClientSock.ClientSocket, Data.c_str(), Size);
 }
 
-bool NetworkController::ReportWork(mpz_class& WorkItem)
-{
-    NETSOCK Socket = GetSocketToServer();
-    NETSOCK Result;
-    bool Success;
-    size_t Size = mpz_sizeinbase(WorkItem.get_mpz_t(), STRING_BASE) + 2;
-    NetworkHeader Header = { 0 };
-    Header.Type = NetworkMessageType::ReportWork;
-    Header.Size = htonl((unsigned int) Size);
-
-    Result = send(Socket, (char*)&Header, sizeof(Header), 0);
-    if (!IsSocketValid(Result))
-    {
-        ReportError(" send header");
-        shutdown(Socket, SD_SEND);
-        closesocket(Socket);
-        return false;
-    }
-
-    std::string Data = WorkItem.get_str(STRING_BASE);
-
-    // Send data now
-    Success = SendPrime(Socket, Data.c_str(), Size);
-
-    shutdown(Socket, SD_SEND);
-    closesocket(Socket);
-    return Success;
-}
-
-void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int Size, NetworkClientInfo& ClientInfo)
-{
-    // Not sending any data on this socket, so shutdown send
-    shutdown(ClientSock.ClientSocket, SD_SEND);
-
-    if (Size < 0 || Size > (INT_MAX >> 1))
-    {
-        std::cerr << __FUNCTION__ << " failed size requirements" << std::endl;
-        return;
-    }
-
-    std::unique_ptr<char[]> Data(ReceivePrime(ClientSock.ClientSocket, Size));
-
-    if (Data == nullptr)
-    {
-        ReportError(" failed to recv workitem");
-        return;
-    }
-
-    PendingIo.EnqueueWorkItem({ std::move(Data) });
-
-}
-
-bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
+bool NetworkController::ReportWork(uint64_t Id, std::vector<mpz_class>& WorkItems)
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
     NetworkHeader Header = { 0 };
     int Size;
     int NetSize;
-    std::string Data;
 
-    Header.Type = NetworkMessageType::BatchReportWork;
+    std::cout << "Reporting " << WorkItems.size() << " results to server" << std::endl;
+
+    Header.Type = NetworkMessageType::ReportWork;
     Header.Size = htonl((unsigned int) WorkItems.size());
 
     // Send header with count of WorkItems
@@ -339,7 +540,13 @@ bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
     if (!IsSocketValid(Result))
     {
         ReportError(" send header");
-        shutdown(Socket, SD_SEND);
+        closesocket(Socket);
+        return false;
+    }
+
+    if (!SendId(Socket, Id))
+    {
+        ReportError(" send Id");
         closesocket(Socket);
         return false;
     }
@@ -347,7 +554,7 @@ bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
     for (mpz_class& WorkItem : WorkItems)
     {
         Size = mpz_sizeinbase(WorkItem.get_mpz_t(), STRING_BASE) + 2;
-        Data = WorkItem.get_str(STRING_BASE); // suspect this leaks memory
+        std::string Data(WorkItem.get_str(STRING_BASE)); // suspect this leaks memory
 
         // Convert Size to network-format.
         NetSize = htonl(Size);
@@ -356,7 +563,6 @@ bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
         if (!IsSocketValid(Result))
         {
             ReportError(" send size");
-            shutdown(Socket, SD_SEND);
             closesocket(Socket);
             return false;
         }
@@ -364,27 +570,34 @@ bool NetworkController::BatchReportWork(std::vector<mpz_class>& WorkItems)
         if (!SendPrime(Socket, Data.c_str(), Size))
         {
             ReportError(" send prime");
-            shutdown(Socket, SD_SEND);
             closesocket(Socket);
             return false;
         }
     }
 
+    // TODO: receive confirmation message here
+    shutdown(Socket, SD_BOTH);
     closesocket(Socket);
     return true;
 }
 
-void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count, NetworkClientInfo& ClientInfo)
+void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int Count, std::shared_ptr<NetworkClientInfo> ClientInfo)
 {
     NETSOCK Result;
     int Size;
-    std::unique_ptr<char[]> Data;
-    std::vector<std::string> BatchData;
+    std::vector<std::unique_ptr<char[]>> BatchData;
 
     BatchData.reserve(Count);
 
     // Only receiving data here
     shutdown(ClientSock.ClientSocket, SD_SEND);
+
+    uint64_t Id = ReceiveId(ClientSock.ClientSocket);
+    if (Id == INVALID_ID)
+    {
+        ReportError(" invalid ID recv'd");
+        return;
+    }
 
     for (int i = 0; i < Count; i++)
     {
@@ -398,7 +611,7 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
 
         Size = ntohl(Size);
 
-        Data = ReceivePrime(ClientSock.ClientSocket, Size);
+        std::unique_ptr<char[]> Data = ReceivePrime(ClientSock.ClientSocket, Size);
 
         if (Data.get() == nullptr)
         {
@@ -406,14 +619,33 @@ void NetworkController::HandleBatchReportWork(NetworkConnectionInfo& ClientSock,
             return;
         }
 
-        BatchData.emplace_back(Data.get());
+        BatchData.emplace_back(Data.release());
     }
 
-    // Enqueue work to a threadpool to actually handle the file IO, since
-    // that may be slow. The server should have enough memory to hold all
-    // the data until it is written out.
-    PendingIo.EnqueueWorkItem({ nullptr, std::move(BatchData) });
 
+    auto Now = std::chrono::steady_clock::now();
+
+    // Make sure that the workitem is still assigned to this client
+    {
+        std::lock_guard<std::mutex> lock(ClientInfo->AssignedWorkitemsLock);
+        auto Assignment = ClientInfo->AssignedWorkitems.find(Id);
+
+        if (Assignment != ClientInfo->AssignedWorkitems.end())
+        {
+            // Mark the workitem as received
+            Assignment->second->Received = true;
+
+            // Update last-received time here
+            ClientInfo->LastReceivedTime = Now;
+
+            // Enqueue work to a threadpool to actually handle the file IO, since
+            // that may be slow. The server should have enough memory to hold all
+            // the data until it is written out.
+            PendingIo.EnqueueWorkItem({ Id, std::move(BatchData), ClientInfo, Now });
+        }
+    }
+
+    // TODO: send confirmation message here
 }
 
 void NetworkController::UnregisterClient()
@@ -469,6 +701,7 @@ void NetworkController::ShutdownClients()
         if (!IsSocketValid(Result))
         {
             ReportError(" send shutdown failed for " + addr.ToString());
+            client.second->Zombie = true;
         }
 
         shutdown(Socket, SD_BOTH);
@@ -485,41 +718,30 @@ void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
     }
 }
 
-void NetworkController::ProcessIO(ControllerIoInfo Info)
+void NetworkController::ProcessIO(ControllerIoInfo&& Info)
 {
-    // Single-item case
-    if (Info.Data != nullptr)
+    if (!CleanupWorkitem(Info))
     {
-        if (Settings.FileSettings.Path.empty())
+        // Isn't the correct work item to process right now, so re-insert
+        // and try again later.
+        PendingIo.EnqueueWorkItem(std::move(Info));
+        return;
+    }
+
+    if (Settings.FileSettings.Path.empty())
+    {
+        for (auto & d : Info.Data)
         {
-            mpz_class Work(Info.Data.get(), STRING_BASE);
+            mpz_class Work(d.get(), STRING_BASE);
 
             //std::cout << Work << std::endl; // linker error on windows
             gmp_fprintf(stdout, "%Zd\n", Work.get_mpz_t());
         }
-        else
-        {
-            FileIo.WritePrime(Info.Data.get());
-        }
     }
-    else // batch-work case
+    else
     {
-        if (Settings.FileSettings.Path.empty())
-        {
-            for (std::string & d : Info.BatchData)
-            {
-                mpz_class Work(d, STRING_BASE);
-
-                //std::cout << Work << std::endl; // linker error on windows
-                gmp_fprintf(stdout, "%Zd\n", Work.get_mpz_t());
-            }
-        }
-        else
-        {
-            FileIo.WritePrimes(Info.BatchData);
-        }
+        FileIo.WritePrimes(Info.Data);
     }
-
 }
 
 void NetworkController::ListenLoop()
@@ -528,7 +750,7 @@ void NetworkController::ListenLoop()
     {
         NetworkConnectionInfo ConnInfo;
         //memset(ConnInfo.get(), 0, sizeof(NetworkConnectionInfo));
-        
+
         socklen_t ConnInfoAddrSize = sizeof(ConnInfo.addr.IPv6);
 
         ConnInfo.ClientSocket = accept(ListenSocket, (sockaddr*)&ConnInfo.addr.IPv6, &ConnInfoAddrSize);
@@ -547,7 +769,7 @@ void NetworkController::ListenLoop()
         else if (Settings.NetworkSettings.Client)
         {
             // process in-line
-            HandleRequest(ConnInfo);
+            HandleRequest(std::move(ConnInfo));
         }
     }
 }
@@ -612,7 +834,7 @@ void NetworkController::ServerBind()
     }
 }
 
-NETSOCK NetworkController::GetSocketTo(sockaddr_in6& Client)
+NETSOCK NetworkController::GetSocketTo(const sockaddr_in6& Client)
 {
     NETSOCK Result;
     int Enable = 1;
@@ -659,20 +881,18 @@ NETSOCK NetworkController::GetSocketToServer()
     return GetSocketTo(Settings.NetworkSettings.IPv6);
 }
 
-NetworkController::NetworkController(AllPrimebotSettings Config) :
+NetworkController::NetworkController(const AllPrimebotSettings& Config) :
     Settings(Config),
     FileIo(Settings),
     OutstandingConnections(
         std::thread::hardware_concurrency(),
         std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1)),
-    CompleteConnections(
-        std::thread::hardware_concurrency(),
-        std::bind(&NetworkController::CleanupRequest, this, std::placeholders::_1)),
     PendingIo(
-        1, // TODO: make IO Threads configurable
+        1, // to ensure sequential consistency, IO must be single-threaded
         std::bind(&NetworkController::ProcessIO, this, std::placeholders::_1)),
     ListenSocket(INVALID_SOCKET),
-    Bot(nullptr)
+    Bot(nullptr),
+    AvgClientCompletionTime(0)
 {
 #if defined(_WIN32) || defined(_WIN64)
     WSAData WsData;
@@ -686,7 +906,6 @@ NetworkController::NetworkController(AllPrimebotSettings Config) :
     {
         // Threadpools unused on client, so stop them to free resources
         OutstandingConnections.Stop();
-        CompleteConnections.Stop();
         PendingIo.Stop();
     }
 }
@@ -705,7 +924,6 @@ NetworkController::~NetworkController()
     if (Settings.NetworkSettings.Server)
     {
         OutstandingConnections.Stop();
-        CompleteConnections.Stop();
         PendingIo.Stop();
     }
 }
@@ -741,6 +959,9 @@ void NetworkController::Start()
     // Actually start waiting for connections
     if (Settings.NetworkSettings.Server)
     {
+        InitialValue = Primebot::GetInitialWorkitem(Settings);
+        NextWorkitem = InitialValue;
+
         // This will never return
         ListenLoop();
     }
@@ -756,17 +977,25 @@ void NetworkController::Shutdown()
 {
     ShutdownClients();
 
-    // wait for list of clients to go to zero, indicating all have unregistered.
-    auto RemainingClients = Clients.size();
-    auto RemainingIo = PendingIo.GetWorkItemCount();
-    while (RemainingClients > 0 || RemainingIo > 0)
+    if (OutstandingWorkitems.front().Client->Zombie)
     {
-        std::cout << "Waiting 1 second for remaining clients: " << RemainingClients
-            << ", remaining I/Os: " << RemainingIo << std::endl;
+        std::cout << "First pending workitem assigned to zombie client. Bailing on cleanup"
+            << std::endl;
+    }
+    else
+    {
+        // wait for list of clients to go to zero, indicating all have unregistered.
+        auto RemainingClients = LivingClientsCount();
+        auto RemainingIo = PendingIo.GetWorkItemCount();
+        while (RemainingClients > 0 || RemainingIo > 0)
+        {
+            std::cout << "Waiting 1 second for remaining living clients: " << RemainingClients
+                << ", remaining I/Os: " << RemainingIo << std::endl;
 
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        RemainingClients = Clients.size();
-        RemainingIo = PendingIo.GetWorkItemCount();
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            RemainingClients = LivingClientsCount();
+            RemainingIo = PendingIo.GetWorkItemCount();
+        }
     }
 }
 
@@ -826,3 +1055,18 @@ std::string AddressType::ToString()
 
     return AddressString.str();
 }
+
+std::random_device NetworkPendingWorkitem::Rd;
+std::mt19937_64 NetworkPendingWorkitem::Rng = std::mt19937_64((uint64_t)NetworkPendingWorkitem::Rd() << 32 || NetworkPendingWorkitem::Rd());
+std::uniform_int_distribution<uint64_t> NetworkPendingWorkitem::Distribution = std::uniform_int_distribution<uint64_t>();
+// Obfuscate the output of the RNG by XORing with this process-lifetime key
+uint64_t NetworkPendingWorkitem::Key = (uint64_t)NetworkPendingWorkitem::Rd() << 32 || NetworkPendingWorkitem::Rd();
+
+NetworkPendingWorkitem::NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli) :
+    Id(Distribution(Rng) ^ Key),
+    Client(Cli),
+    Start(Value),
+    Range(Offset),
+    Timestamp(std::chrono::steady_clock::now()),
+    Received(false)
+{}

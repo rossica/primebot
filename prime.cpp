@@ -9,9 +9,11 @@
 
 inline size_t GetReservedSize(unsigned int BatchSize, mpz_ptr Candidate)
 {
-    // 0.7 approximates ln(2).
+    // Approximates ln(2).
+    typedef std::ratio<34657, 50000> ln2;
+
     // ceil()s to the nearest 1000
-    return std::ceil(((2 * BatchSize) / (mpz_sizeinbase(Candidate, 2) * 0.7)) / 1000.0) * 1000;
+    return std::ceil(((2 * BatchSize) / ((mpz_sizeinbase(Candidate, 2) * ln2::num) / ln2::den)) / 1000.0) * 1000;
 }
 
 
@@ -50,7 +52,7 @@ std::pair<mpz_class, int> Primebot::GenerateRandomOdd(unsigned int Bits, unsigne
     return std::make_pair(std::move(Work), PreviousIteration + 1);
 }
 
-mpz_class Primebot::GetInitialWorkitem(AllPrimebotSettings& Settings)
+mpz_class Primebot::GetInitialWorkitem(const AllPrimebotSettings& Settings)
 {
     if (Settings.PrimeSettings.StartValue.empty())
     {
@@ -90,7 +92,7 @@ std::vector<int> Primebot::DecomposeToPowersOfTwo(mpz_class Input)
     return Powers;
 }
 
-void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
+void Primebot::FindPrimeStandalone(mpz_class && workitem, int id, unsigned int BatchSize)
 {
     unsigned int Step = 2 * BatchSize * (Settings.PrimeSettings.ThreadCount - 1);
 
@@ -113,8 +115,6 @@ void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
 
         // The increment of workitem in the last iteration is essential to making
         // sure there are no gaps.
-        // Note: this loop wont be canceled by Quit because it's guaranteed to
-        // always reach a terminal state, so it'll always return a full batch.
         for (unsigned int i = 0; i < BatchSize && !Quit; i++, workitem += 2)
         {
             if (mpz_probab_prime_p(workitem.get_mpz_t(), MillerRabinIterations))
@@ -158,14 +158,52 @@ void Primebot::FindPrime(mpz_class && workitem, int id, unsigned int BatchSize)
     }
 }
 
+void Primebot::FindPrimesClient()
+{
+    for (unsigned long long j = 0; j < Settings.PrimeSettings.BatchCount && !Quit; j++)
+    {
+        // Get workitem from server
+        ClientWorkitem Workitem = Controller->RequestWork(1);
+        while ((Workitem.Start.get_ui() == 0 || Workitem.Offset == 0 || Workitem.Id == 0) & !Quit)
+        {
+            // Failed to get work item, try again.
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            Workitem = Controller->RequestWork(1);
+        }
+
+        mpz_list Batch;
+        // This wastes some memory, but we'll never have to do a resize operation.
+        Batch.reserve(GetReservedSize(Workitem.Offset, Workitem.Start.get_mpz_t()));
+
+        // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
+        // composite number will pass the nth iteration of the test.
+        // The below selects the bit-length of the candidate prime, divided by 2
+        // as the number of iterations to perform.
+        // This has the property of putting the probability of a composite passing
+        // the test to be less than the count of possible numbers for a given bit-length.
+        // Or so I think...
+        int MillerRabinIterations = (mpz_sizeinbase(Workitem.Start.get_mpz_t(), 2) / 2);
+
+        // The increment of workitem in the last iteration is essential to making
+        // sure there are no gaps.
+        // Note: this loop wont be canceled by Quit because it's guaranteed to
+        // always reach a terminal state, so it'll always return a full batch.
+        for (unsigned int i = 0; i < Workitem.Offset / 2; i++, Workitem.Start += 2)
+        {
+            if (mpz_probab_prime_p(Workitem.Start.get_mpz_t(), MillerRabinIterations))
+            {
+                Batch.emplace_back(Workitem.Start);
+            }
+        }
+
+        Controller->ReportWork(Workitem.Id, Batch);
+    }
+}
+
 void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
 {
-    // Use network to report results
-    if (Controller != nullptr)
-    {
-        Controller->BatchReportWork(Results);
-    }
-    else
+    // Don't use network to report results
+    if (Controller == nullptr)
     {
         if (Settings.FileSettings.Path.empty())
         {
@@ -194,7 +232,122 @@ void Primebot::ProcessIo(std::unique_ptr<mpz_list_list> && data)
     }
 }
 
-Primebot::Primebot(AllPrimebotSettings Config, NetworkController* NetController) :
+void Primebot::StartClient()
+{
+    // Start listening for events from the server
+    Controller->Start();
+
+    while (!Controller->RegisterClient() & !Quit)
+    {
+        // Failed to register client, try again
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    // I/O pool unused in client mode.
+    IoPool.Stop();
+
+    if (Settings.PrimeSettings.UseAsync)
+    {
+        RunAsyncClient();
+    }
+    else
+    {
+        RunThreadsClient();
+    }
+}
+
+void Primebot::StartStandalone()
+{
+    if (Settings.PrimeSettings.UseAsync)
+    {
+        RunAsyncStandalone();
+    }
+    else
+    {
+        RunThreadsStandalone();
+    }
+}
+
+void Primebot::RunAsyncClient()
+{
+    for (unsigned long long i = 0; (i < Settings.PrimeSettings.BatchCount) & !Quit; i++)
+    {
+        // Get workitem from server
+        ClientWorkitem Workitem = Controller->RequestWork(Settings.PrimeSettings.ThreadCount);
+        while ((Workitem.Start.get_ui() == 0) & !Quit)
+        {
+            // Failed to get work item, try again.
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            Workitem = Controller->RequestWork(Settings.PrimeSettings.ThreadCount);
+        }
+
+        // Initialize start and end for asynchronous work
+        mpz_class AsyncStart(Workitem.Start);
+        mpz_class AsyncEnd(AsyncStart);
+
+        AsyncEnd += Workitem.Offset;
+
+        Controller->ReportWork(Workitem.Id, findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd));
+    }
+}
+
+void Primebot::RunAsyncStandalone()
+{
+    // Stand-alone mode, generate starting prime
+    mpz_class Start = GetInitialWorkitem(Settings);
+
+    // Async implementation
+    mpz_class AsyncStart(Start);
+    mpz_class AsyncEnd(AsyncStart);
+
+    // Make the range grow proportionally to the size of numbers being searched.
+    unsigned int RangeSize =
+        Settings.PrimeSettings.BatchSize
+        * Settings.PrimeSettings.ThreadCount
+        * mpz_sizeinbase(AsyncStart.get_mpz_t(), 2);
+
+    for (unsigned long long i = 0; (i < Settings.PrimeSettings.BatchCount) & !Quit; i++)
+    {
+        AsyncEnd += RangeSize;
+
+        std::unique_ptr<mpz_list_list> IoContainer(new mpz_list_list());
+
+        IoContainer->push_back(
+            findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd));
+
+        IoPool.EnqueueWorkItem(std::move(IoContainer));
+
+        // Move the start to the end of the range
+        AsyncStart = AsyncEnd;
+    }
+}
+
+void Primebot::RunThreadsClient()
+{
+    for (unsigned int i = 0; i < Threads.size(); i++)
+    {
+        Threads[i] = std::move(std::thread(&Primebot::FindPrimesClient, this));
+    }
+}
+
+void Primebot::RunThreadsStandalone()
+{
+    // Stand-alone mode, generate starting prime
+    mpz_class Start = GetInitialWorkitem(Settings);
+
+    // Make BatchSize grow proportionally to the size of the numbers being searched.
+    unsigned int BatchSize = Settings.PrimeSettings.BatchSize * mpz_sizeinbase(Start.get_mpz_t(), 2);
+
+    for (unsigned int i = 0; i < Threads.size(); i++)
+    {
+        // ((2 * i) + Start)
+        mpz_class work(Start);
+        work += (2 * i * BatchSize);
+        Threads[i] = std::move(std::thread(&Primebot::FindPrimeStandalone, this, std::move(work), i, BatchSize));
+    }
+}
+
+Primebot::Primebot(const AllPrimebotSettings& Config, NetworkController* NetController) :
     Controller(NetController),
     Settings(Config),
     FileIo(Settings),
@@ -215,70 +368,13 @@ void Primebot::Start()
 {
     mpz_class Start;
 
-    if (Controller != nullptr)
+    if (Settings.NetworkSettings.Client)
     {
-        // Start listening for events from the server
-        Controller->Start();
-
-        while (!Controller->RegisterClient() & !Quit)
-        {
-            // Failed to register client, try again
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-
-        Start = Controller->RequestWork();
-        while ((Start.get_ui() == 0) & !Quit)
-        {
-            // Failed to get work item, try again.
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            Start = Controller->RequestWork();
-        }
+        StartClient();
     }
     else
     {
-        // Stand-alone mode, generate starting prime
-        Start = GetInitialWorkitem(Settings);
-    }
-
-    if (Settings.PrimeSettings.UseAsync)
-    {
-        // Async implementation
-        mpz_class AsyncStart(Start);
-        mpz_class AsyncEnd(AsyncStart);
-
-        // Make the range grow proportionally to the size of numbers being searched.
-        unsigned int RangeSize = 
-            Settings.PrimeSettings.BatchSize
-            * Settings.PrimeSettings.ThreadCount
-            * mpz_sizeinbase(AsyncStart.get_mpz_t(), 2);
-
-        for (unsigned long long i = 0; (i < Settings.PrimeSettings.BatchCount) & !Quit; i++)
-        {
-            AsyncEnd += RangeSize;
-
-            std::unique_ptr<mpz_list_list> IoContainer(new mpz_list_list());
-
-            IoContainer->push_back(
-                findPrimes(Settings.PrimeSettings.ThreadCount, AsyncStart, AsyncEnd));
-
-            IoPool.EnqueueWorkItem(std::move(IoContainer));
-
-            // Move the start to the end of the range
-            AsyncStart = AsyncEnd;
-        }
-    }
-    else
-    {
-        // Make BatchSize grow proportionally to the size of the numbers being searched.
-        unsigned int BatchSize = Settings.PrimeSettings.BatchSize * mpz_sizeinbase(Start.get_mpz_t(), 2);
-
-        for (unsigned int i = 0; i < Threads.size(); i++)
-        {
-            // ((2 * i) + Start)
-            mpz_class work(Start);
-            work += (2 * i * BatchSize);
-            Threads[i] = std::move(std::thread(&Primebot::FindPrime, this, std::move(work), i, BatchSize));
-        }
+        StartStandalone();
     }
 }
 

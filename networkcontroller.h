@@ -16,7 +16,12 @@ typedef int NETSOCK;
 
 #include <memory>
 #include <map>
+#include <set>
 #include <list>
+#include <chrono>
+#include <random>
+#include <mutex>
+#include <ratio>
 #include "threadpool.h"
 #include "prime.h"
 #include "fileio.h"
@@ -24,14 +29,34 @@ typedef int NETSOCK;
 
 #define CLIENT_PORT (htons(60001))
 #define STRING_BASE (62)
+#define INVALID_ID 0
+
+///////////////////////////////////////////////////
+//
+//  Types for communicating with other modules
+//
+///////////////////////////////////////////////////
+
+struct ClientWorkitem
+{
+    uint64_t Id;
+    mpz_class Start;
+    uint32_t Offset;
+};
+
+///////////////////////////////////////
+//
+//  On-Wire enumerations and types
+//
+//////////////////////////////////////
 
 struct NetworkHeader
 {
     // Type of NetworkMessage
-    char Type;
+    uint8_t Type;
     // Size of Data section (doesn't include the header)
     // N.B. This will be Network byte-order until converted.
-    int Size;
+    int32_t Size;
 };
 
 enum NetworkMessageType
@@ -39,15 +64,50 @@ enum NetworkMessageType
     Invalid = 0,
     RegisterClient, // 0 size, no message
     ClientRegistered, // ACKs client registration
-    RequestWork, // 0 size, no message
-    WorkItem, // binary representation of workitem
-    ReportWork, // size of workitem, binary representation of workitem
-    WorkAccepted, // 0 size, no message
-    BatchReportWork, // count of (size,workitem) pairs
-    BatchWorkAccepted, // 0 size, no message
+    RequestWork, // size = 2, # of workitems requested
+    WorkItem, // ID, Offset, binary representation of workitem
+    ReportWork, // size = count of (size,workitem) pairs
+    WorkAccepted, // 0 size, no message; un-implemented
     UnregisterClient, // 0 size, sent by client during shutdown
     ShutdownClient // 0 size, server initiated message
 };
+
+struct RequestWorkMessage
+{
+    // Requested count of workitems, in network byte-order
+    uint16_t WorkitemCount;
+};
+
+struct WorkItemMessage
+{
+    // Work item Id, in network byte-order
+    uint64_t Id;
+    // Offset to search until, in network byte-order
+    uint32_t Offset;
+    char Workitem[];
+};
+
+struct OnWireWorkItem
+{
+    // THe number of bytes in Workitem, in network byte-order
+    uint32_t Size;
+    // The string representation of the number
+    char Workitem[];
+};
+
+struct ReportWorkMessage
+{
+    // Work item Id, in network byte-order
+    uint64_t Id;
+    // There's more than one of these; this is just the first one.
+    OnWireWorkItem WorkItem;
+};
+
+////////////////////////////////
+//
+//  Internal bookkeeping types
+//
+////////////////////////////////
 
 struct AddressType
 {
@@ -57,7 +117,7 @@ struct AddressType
         sockaddr_in6 IPv6;
     };
 
-    AddressType(sockaddr_in6& ip6)
+    AddressType(const sockaddr_in6& ip6)
     {
         IPv6 = ip6;
         if (IPv6.sin6_family == AF_INET6)
@@ -72,7 +132,7 @@ struct AddressType
         }
     }
 
-    AddressType(sockaddr_in& ip4)
+    AddressType(const sockaddr_in& ip4)
     {
         IPv4 = ip4;
         IPv4.sin_port = 0;
@@ -89,6 +149,28 @@ struct AddressType
 inline bool operator<(const AddressType& Left, const AddressType& Right);
 inline bool operator==(const AddressType& Left, const AddressType& Right);
 
+
+// forward decl
+struct NetworkClientInfo;
+
+class NetworkPendingWorkitem
+{
+private:
+    static std::random_device Rd;
+    static std::mt19937_64 Rng;
+    static std::uniform_int_distribution<uint64_t> Distribution;
+    static uint64_t Key;
+public:
+    uint64_t Id;
+    mpz_class Start;
+    uint32_t Range;
+    std::shared_ptr<NetworkClientInfo> Client;
+    std::chrono::steady_clock::time_point Timestamp;
+    bool Received;
+
+    NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli);
+};
+
 struct NetworkConnectionInfo
 {
     AddressType addr;
@@ -97,56 +179,74 @@ struct NetworkConnectionInfo
 
 struct NetworkClientInfo
 {
-    unsigned int Seed;
-    unsigned int Bitsize;
+    typedef std::ratio<1,2> MeanWeight;
+    uint64_t TotalAssignedWorkitems;
+    uint64_t TotalCompletedWorkitems;
+    std::map<uint64_t, NetworkPendingWorkitem*> AssignedWorkitems;
+    std::mutex AssignedWorkitemsLock; // only used for lookups and deletion
+    std::chrono::steady_clock::duration AvgCompletionTime;
+    std::chrono::steady_clock::time_point LastReceivedTime;
+    AddressType Key; // yes this wastes some space
+    bool Zombie;
 };
 
 struct ControllerIoInfo
 {
-    std::unique_ptr<char[]> Data;
-    std::vector<std::string> BatchData;
+    uint64_t Id;
+    std::vector<std::unique_ptr<char[]>> Data;
+    std::shared_ptr<NetworkClientInfo> ReportingClient;
+    std::chrono::steady_clock::time_point ReceivedTime;
 };
 
 class NetworkController
 {
 private:
-    AllPrimebotSettings Settings;
+    typedef std::ratio<1,2> MeanWeight;
+    const AllPrimebotSettings& Settings;
     PrimeFileIo FileIo;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
-    Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> CompleteConnections;
     Threadpool<ControllerIoInfo, std::list<ControllerIoInfo>> PendingIo;
-    std::map<AddressType, NetworkClientInfo> Clients;
+    std::map<AddressType, std::shared_ptr<NetworkClientInfo>> Clients;
     NETSOCK ListenSocket;
     Primebot* Bot;
+    mpz_class InitialValue;
+    mpz_class NextWorkitem;
+    std::list<NetworkPendingWorkitem> OutstandingWorkitems;
+    std::mutex OutstandingWorkitemsLock;
+    std::chrono::steady_clock::duration AvgClientCompletionTime;
 
     // helper functions
     std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, size_t Size);
     bool SendPrime(NETSOCK Socket, const char * const Prime, size_t Size);
+    uint64_t ReceiveId(NETSOCK Socket);
+    bool SendId(NETSOCK Socket, uint64_t Id);
+    uint32_t ReceiveOffset(NETSOCK Socket);
+    bool SendOffset(NETSOCK Socket, uint32_t Offset);
+    NetworkPendingWorkitem& CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client);
+    bool CleanupWorkitem(ControllerIoInfo& Info);
+    int LivingClientsCount();
 
     // handles incoming requests, for client and server
-    void HandleRequest(NetworkConnectionInfo ClientSock);
+    void HandleRequest(NetworkConnectionInfo&& ClientSock);
 
     void HandleRegisterClient(NetworkConnectionInfo& ClientSock);
-    void HandleRequestWork(NetworkConnectionInfo& ClientSock, NetworkClientInfo& ClientInfo);
-    void HandleReportWork(NetworkConnectionInfo& ClientSock, int Size, NetworkClientInfo& ClientInfo);
-    void HandleBatchReportWork(NetworkConnectionInfo& ClientSock, int Count, NetworkClientInfo& ClientInfo);
+    void HandleRequestWork(NetworkConnectionInfo& ClientSock, std::shared_ptr<NetworkClientInfo> ClientInfo);
+    void HandleReportWork(NetworkConnectionInfo& ClientSock, int Count, std::shared_ptr<NetworkClientInfo> ClientInfo);
     void HandleUnregisterClient(NetworkConnectionInfo& ClientSock);
     void HandleShutdownClient(NetworkConnectionInfo& ServerSock);
 
-    void CleanupRequest(NetworkConnectionInfo ClientSock);
-
     // Handle IO
-    void ProcessIO(ControllerIoInfo Info);
+    void ProcessIO(ControllerIoInfo&& Info);
 
     void ListenLoop();
     void ClientBind();
     void ServerBind();
 
-    NETSOCK GetSocketTo(sockaddr_in6& Client);
+    NETSOCK GetSocketTo(const sockaddr_in6& Client);
     NETSOCK GetSocketToServer();
 public:
     NetworkController() = delete;
-    NetworkController(AllPrimebotSettings Config);
+    NetworkController(const AllPrimebotSettings& Config);
     ~NetworkController();
     void Start();
     void Shutdown();
@@ -154,9 +254,8 @@ public:
     void SetPrimebot(Primebot* bot) { Bot = bot; }
 
     bool RegisterClient();
-    mpz_class RequestWork();
-    bool ReportWork(mpz_class& WorkItem);
-    bool BatchReportWork(std::vector<mpz_class>& WorkItems);
+    ClientWorkitem RequestWork(uint16_t Count);
+    bool ReportWork(uint64_t Id, std::vector<mpz_class>& WorkItems);
     void UnregisterClient();
     void ShutdownClients();
 };

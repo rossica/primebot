@@ -21,15 +21,12 @@
 
 #define STRING_BASE (62)
 
-struct FileCloser
+typedef std::unique_ptr<std::FILE, decltype(&std::fclose)> SmartFile;
+
+SmartFile make_smartfile(const char* FilePath, const char* Mode)
 {
-    void operator()(std::FILE* ptr) const
-    {
-        std::fclose(ptr);
-        delete ptr;
-    }
-};
-typedef std::unique_ptr<std::FILE, FileCloser> SmartFile;
+    return SmartFile(std::fopen(FilePath, Mode), std::fclose);
+}
 
 std::string GetBasePrimeFileName(const AllPrimebotSettings& Settings)
 {
@@ -102,7 +99,7 @@ bool PrimeFileIo::WritePrimeToBinaryFile(std::string BasePath, std::string Name,
 
     std::string FullFilePath = BasePath + '/' + Name;
 
-    SmartFile PrimeFile(std::fopen(FullFilePath.c_str(), "a+b"));
+    SmartFile PrimeFile = make_smartfile(FullFilePath.c_str(), "a+b");
     if (PrimeFile == nullptr)
     {
         std::cerr << "Failed to open file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
@@ -236,7 +233,7 @@ mpz_list PrimeFileIo::ReadPrimesFromTextFile(std::string FullFilePath)
     while (std::getline(PrimeFile, CurrentStr))
     {
         Current = mpz_class(CurrentStr, STRING_BASE);
-        Current += First;
+        //Current += First; // TODO: uncomment when implement differencing to text path
 
         Primes.push_back(Current);
     }
@@ -263,7 +260,7 @@ bool PrimeFileIo::WritePrimesToBinaryFile(std::string BasePath, std::string Name
 
     std::string FullFilePath = BasePath + '/' + Name;
 
-    SmartFile PrimeFile(std::fopen(FullFilePath.c_str(), "a+b"));
+    SmartFile PrimeFile = make_smartfile(FullFilePath.c_str(), "a+b");
     if (PrimeFile == nullptr)
     {
         std::cerr << "Failed to open file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
@@ -344,7 +341,7 @@ bool PrimeFileIo::WritePrimesToBinaryFile(std::string BasePath, std::string Name
 
     std::string FullFilePath = BasePath + '/' + Name;
 
-    SmartFile PrimeFile(std::fopen(FullFilePath.c_str(), "a+b"));
+    SmartFile PrimeFile = make_smartfile(FullFilePath.c_str(), "a+b");
     if (PrimeFile == nullptr)
     {
         std::cerr << "Failed to open file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
@@ -418,7 +415,7 @@ mpz_list PrimeFileIo::ReadPrimesFromBinaryFile(std::string FullFilePath)
     mpz_list Primes;
     mpz_class Current;
 
-    SmartFile PrimeFile(std::fopen(FullFilePath.c_str(), "rb"));
+    SmartFile PrimeFile = make_smartfile(FullFilePath.c_str(), "rb");
     if (PrimeFile == nullptr)
     {
         std::cerr << "Failed to open file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;

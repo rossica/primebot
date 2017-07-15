@@ -51,7 +51,7 @@ struct PrimebotSettings
     std::string StartValue;
     // Numeric Base of the given StartValue
     unsigned int StartValueBase;
-    // Count of primes in each batch sent to server
+    // Count of numbers to search for primes
     unsigned int BatchSize;
     // Total count of batches to find and send
     unsigned long long BatchCount;
