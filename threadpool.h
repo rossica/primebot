@@ -26,7 +26,7 @@ private:
 
 	void Initialize();
 
-    bool GetWorkItemThread(T&& WorkItem);
+    std::pair<bool,T> GetWorkItemThread();
 
 	std::function<void(T&&)> ProcessWorkItem;
 public:
@@ -112,19 +112,19 @@ inline void Threadpool<T,C>::Stop()
 }
 
 template<class T,class C>
-inline bool Threadpool<T,C>::GetWorkItemThread(T&& WorkItem)
+inline std::pair<bool,T> Threadpool<T,C>::GetWorkItemThread()
 {
 	std::lock_guard<std::mutex> lock(WorkItemsLock);
 
 	if (WorkItems.size() == 0)
 	{
-		return false;
+        return std::make_pair<bool, T>(false, {});
 	}
 
-	WorkItem = std::move(WorkItems.front());
+	std::pair<bool,T> Workitem(true, std::move(WorkItems.front()));
 	WorkItems.pop_front();
 
-	return true;
+	return Workitem;
 }
 
 template<class T,class C>
@@ -139,10 +139,10 @@ inline void Threadpool<T,C>::ThreadFunc()
 		}
 
         // check WorkItems, and process a workitem
-        T WorkItem{};
-        if (GetWorkItemThread(std::move(WorkItem)))
+        std::pair<bool, T> Workitem = GetWorkItemThread();
+        if (Workitem.first)
         {
-            ProcessWorkItem(std::move(WorkItem));
+            ProcessWorkItem(std::move(Workitem.second));
         }
 	}
 }
