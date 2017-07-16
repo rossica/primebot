@@ -35,13 +35,21 @@ extern Primebot* Bot;
 
 BOOL WINAPI CtrlCHandler(DWORD type)
 {
+    static bool ShutdownInProgress = false;
     switch (type)
     {
     case CTRL_C_EVENT:
     case CTRL_BREAK_EVENT:
         if (ProgramSettings.NetworkSettings.Server && Controller != nullptr)
         {
-            Controller->Shutdown();
+            if (!ShutdownInProgress)
+            {
+                ShutdownInProgress = true;
+
+                // Only perform cleanup the first time this is called.
+                // Subsequent calls just kill the process.
+                Controller->Shutdown();
+            }
             // Now that cleanup has completed, let the OS kill the program
             // by returning FALSE.
             return FALSE;

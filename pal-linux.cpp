@@ -19,8 +19,9 @@ extern Primebot* Bot;
 
 void CtrlCHandler(int type)
 {
+    static bool ShutdownInProgress = false;
     std::thread(
-        [type]
+        [type, &ShutdownInProgress]
         {
             switch(type)
             {
@@ -28,7 +29,11 @@ void CtrlCHandler(int type)
             case SIGTERM:
                 if(ProgramSettings.NetworkSettings.Server && Controller != nullptr)
                 {
-                    Controller->Shutdown();
+                    if(!ShutdownInProgress)
+                    {
+                        ShutdownInProgress = true;
+                        Controller->Shutdown();
+                    }
                     // Now that cleanup is complete, exit the program.
                     exit(EXIT_SUCCESS);
                 }

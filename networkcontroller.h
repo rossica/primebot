@@ -164,11 +164,19 @@ public:
     uint64_t Id;
     mpz_class Start;
     uint32_t Range;
-    std::shared_ptr<NetworkClientInfo> Client;
-    std::chrono::steady_clock::time_point Timestamp;
-    bool Received;
+    std::shared_ptr<NetworkClientInfo> AssignedClient;
+    std::shared_ptr<NetworkClientInfo> ReportingClient;
+    std::chrono::steady_clock::time_point SendTime;
+    std::chrono::steady_clock::time_point ReceivedTime;
+    //std::mutex DataLock;
+    std::vector<std::unique_ptr<char[]>> Data;
+    bool DataReceived;
 
     NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli);
+    NetworkPendingWorkitem(const NetworkPendingWorkitem&) = delete;
+    NetworkPendingWorkitem(NetworkPendingWorkitem&&) = default;
+
+    //NetworkPendingWorkitem& operator=(const NetworkPendingWorkitem&) = delete;
 };
 
 struct NetworkConnectionInfo
@@ -183,7 +191,7 @@ struct NetworkClientInfo
     uint64_t TotalAssignedWorkitems;
     uint64_t TotalCompletedWorkitems;
     std::map<uint64_t, NetworkPendingWorkitem*> AssignedWorkitems;
-    std::mutex AssignedWorkitemsLock; // only used for lookups and deletion
+    std::mutex ClientLock; // only used for lookups and deletion
     std::chrono::steady_clock::duration AvgCompletionTime;
     std::chrono::steady_clock::time_point LastReceivedTime;
     AddressType Key; // yes this wastes some space
@@ -205,15 +213,18 @@ private:
     const AllPrimebotSettings& Settings;
     PrimeFileIo FileIo;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
-    Threadpool<ControllerIoInfo, std::list<ControllerIoInfo>> PendingIo;
+    //Threadpool<ControllerIoInfo, std::list<ControllerIoInfo>> PendingIo;
     std::map<AddressType, std::shared_ptr<NetworkClientInfo>> Clients;
     NETSOCK ListenSocket;
     Primebot* Bot;
     mpz_class InitialValue;
     mpz_class NextWorkitem;
     std::list<NetworkPendingWorkitem> OutstandingWorkitems;
+    std::map<uint64_t, NetworkPendingWorkitem*> OutstandingWorkitemsMap;
     std::mutex OutstandingWorkitemsLock;
     std::chrono::steady_clock::duration AvgClientCompletionTime;
+    std::condition_variable_any IoWaitVariable;
+    std::mutex IoWaitLock;
 
     // helper functions
     std::unique_ptr<char[]> ReceivePrime(NETSOCK Socket, size_t Size);
@@ -223,7 +234,8 @@ private:
     uint32_t ReceiveOffset(NETSOCK Socket);
     bool SendOffset(NETSOCK Socket, uint32_t Offset);
     NetworkPendingWorkitem& CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client);
-    bool CleanupWorkitem(ControllerIoInfo& Info);
+    bool CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkClientInfo> Client, std::vector<std::unique_ptr<char[]>> ReceivedData);
+    NetworkPendingWorkitem CleanupCurrentWorkitem();
     int LivingClientsCount();
 
     // handles incoming requests, for client and server
@@ -237,6 +249,7 @@ private:
 
     // Handle IO
     void ProcessIO(ControllerIoInfo&& Info);
+    void IoLoop();
 
     void ListenLoop();
     void ClientBind();
