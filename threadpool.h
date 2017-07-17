@@ -13,31 +13,31 @@ template<class T,class C = std::deque<T>>
 class Threadpool
 {
 private:
-	std::vector<std::thread> Threads;
+    std::vector<std::thread> Threads;
     C WorkItems;
-	std::mutex WorkItemsLock;
-	std::recursive_mutex WaitLock;
-	std::condition_variable_any WaitVariable;
-	std::atomic_bool Stopping;
+    std::mutex WorkItemsLock;
+    std::recursive_mutex WaitLock;
+    std::condition_variable_any WaitVariable;
+    std::atomic_bool Stopping;
     std::atomic_bool Stopped;
     unsigned int ThreadCount;
 
-	void ThreadFunc();
+    void ThreadFunc();
 
-	void Initialize();
+    void Initialize();
 
     std::pair<bool,T> GetWorkItemThread();
 
-	std::function<void(T&&)> ProcessWorkItem;
+    std::function<void(T&&)> ProcessWorkItem;
 public:
-	Threadpool() = delete;
-	Threadpool(const Threadpool&) = delete;
-	Threadpool(unsigned int ThreadCount, std::function<void(T&&)>&& ProcessWorkitem);
-	~Threadpool();
+    Threadpool() = delete;
+    Threadpool(const Threadpool&) = delete;
+    Threadpool(unsigned int ThreadCount, std::function<void(T&&)>&& ProcessWorkitem);
+    ~Threadpool();
 
     void EnqueueWorkItem(T&& WorkItem);
 
-	void Stop();
+    void Stop();
 
     unsigned int GetThreadCount() { return ThreadCount; }
     auto GetWorkItemCount() { std::lock_guard<std::mutex> lock(WorkItemsLock); return WorkItems.size(); }
@@ -57,7 +57,7 @@ Threadpool<T,C>::Threadpool(unsigned int ThreadCount, std::function<void(T&&)>&&
 template<class T,class C>
 Threadpool<T,C>::~Threadpool()
 {
-	Stop();
+    Stop();
 }
 
 template<class T,class C>
@@ -99,13 +99,13 @@ inline void Threadpool<T,C>::Stop()
         WaitVariable.notify_all();
     }
 
-	for (unsigned i = 0; i < Threads.size(); i++)
-	{
-		if (Threads[i].joinable())
-		{
-			Threads[i].join();
-		}
-	}
+    for (unsigned i = 0; i < Threads.size(); i++)
+    {
+        if (Threads[i].joinable())
+        {
+            Threads[i].join();
+        }
+    }
 
     WorkItems.clear();
     Threads.clear();
@@ -114,29 +114,29 @@ inline void Threadpool<T,C>::Stop()
 template<class T,class C>
 inline std::pair<bool,T> Threadpool<T,C>::GetWorkItemThread()
 {
-	std::lock_guard<std::mutex> lock(WorkItemsLock);
+    std::lock_guard<std::mutex> lock(WorkItemsLock);
 
-	if (WorkItems.size() == 0)
-	{
+    if (WorkItems.size() == 0)
+    {
         return std::make_pair<bool, T>(false, {});
-	}
+    }
 
-	std::pair<bool,T> Workitem(true, std::move(WorkItems.front()));
-	WorkItems.pop_front();
+    std::pair<bool,T> Workitem(true, std::move(WorkItems.front()));
+    WorkItems.pop_front();
 
-	return Workitem;
+    return Workitem;
 }
 
 template<class T,class C>
 inline void Threadpool<T,C>::ThreadFunc()
 {
-	while (!Stopped)
-	{
-		{
-			std::unique_lock<std::recursive_mutex> lock(WaitLock);
-			// Wait for work to do/wait to exit
+    while (!Stopped)
+    {
+        {
+            std::unique_lock<std::recursive_mutex> lock(WaitLock);
+            // Wait for work to do/wait to exit
             WaitVariable.wait(lock, [this] () -> bool { return (WorkItems.size() > 0) || Stopped; });
-		}
+        }
 
         // check WorkItems, and process a workitem
         std::pair<bool, T> Workitem = GetWorkItemThread();
@@ -144,7 +144,7 @@ inline void Threadpool<T,C>::ThreadFunc()
         {
             ProcessWorkItem(std::move(Workitem.second));
         }
-	}
+    }
 }
 
 template<class T,class C>
@@ -154,10 +154,10 @@ inline void Threadpool<T,C>::EnqueueWorkItem(T&& WorkItem)
     {
         return;
     }
-	{
-		std::lock_guard<std::mutex> lock(WorkItemsLock);
-		WorkItems.push_back(std::move(WorkItem));
-	}
+    {
+        std::lock_guard<std::mutex> lock(WorkItemsLock);
+        WorkItems.push_back(std::move(WorkItem));
+    }
     {
         std::unique_lock<std::recursive_mutex> lock(WaitLock);
         WaitVariable.notify_all();

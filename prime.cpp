@@ -13,7 +13,7 @@ inline size_t GetReservedSize(unsigned int BatchSize, mpz_ptr Candidate)
     typedef std::ratio<34657, 50000> ln2;
 
     // ceil()s to the nearest 1000
-    return std::ceil(((2 * BatchSize) / ((mpz_sizeinbase(Candidate, 2) * ln2::num) / ln2::den)) / 1000.0) * 1000;
+    return std::ceil(((BatchSize) / ((mpz_sizeinbase(Candidate, 2) * ln2::num) / ln2::den)) / 1000.0) * 1000;
 }
 
 
@@ -102,7 +102,7 @@ void Primebot::FindPrimeStandalone(mpz_class && workitem, int id, unsigned int B
 
         mpz_list Batch;
         // This wastes some memory, but we'll never have to do a resize operation.
-        Batch.reserve(GetReservedSize(BatchSize, workitem.get_mpz_t()));
+        Batch.reserve(GetReservedSize(2 * BatchSize, workitem.get_mpz_t()));
 
         // Miller-Rabin has 4^-n (or (1/4)^n if you prefer) probability that a
         // composite number will pass the nth iteration of the test.
@@ -171,6 +171,13 @@ void Primebot::FindPrimesClient()
             Workitem = Controller->RequestWork(1);
         }
 
+        if ((Workitem.Start.get_ui() == 0 || Workitem.Offset == 0 || Workitem.Id == 0) && Quit)
+        {
+            // This lets clients that have just downloaded a workitem to
+            // complete it and prevent the server from hanging.
+            break;
+        }
+
         mpz_list Batch;
         // This wastes some memory, but we'll never have to do a resize operation.
         Batch.reserve(GetReservedSize(Workitem.Offset, Workitem.Start.get_mpz_t()));
@@ -198,6 +205,8 @@ void Primebot::FindPrimesClient()
 
         Controller->ReportWork(Workitem.Id, Batch);
     }
+    // If the batch count is reached, call stop()
+    std::thread(&Primebot::Stop, this).detach();
 }
 
 void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
@@ -274,11 +283,16 @@ void Primebot::RunAsyncClient()
     {
         // Get workitem from server
         ClientWorkitem Workitem = Controller->RequestWork(Settings.PrimeSettings.ThreadCount);
-        while ((Workitem.Start.get_ui() == 0) & !Quit)
+        while ((Workitem.Start.get_ui() == 0 || Workitem.Offset == 0 || Workitem.Id == 0) & !Quit)
         {
             // Failed to get work item, try again.
             std::this_thread::sleep_for(std::chrono::seconds(1));
             Workitem = Controller->RequestWork(Settings.PrimeSettings.ThreadCount);
+        }
+
+        if ((Workitem.Start.get_ui() == 0 || Workitem.Offset == 0 || Workitem.Id == 0) && Quit)
+        {
+            break;
         }
 
         // Initialize start and end for asynchronous work
