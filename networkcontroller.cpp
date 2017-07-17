@@ -155,7 +155,7 @@ bool NetworkController::SendOffset(NETSOCK Socket, uint32_t Offset)
     return true;
 }
 
-NetworkPendingWorkitem& NetworkController::CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client)
+NetworkPendingWorkitem NetworkController::CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client)
 {
     auto Now = std::chrono::steady_clock::now();
     // TODO: growth function for batchsize relative to prime magnitude:
@@ -196,16 +196,11 @@ NetworkPendingWorkitem& NetworkController::CreateWorkitem(uint16_t WorkitemCount
         ExistingWorkitemRef.SendTime = Now;
         DuplicateAssignments++;
 
-        return ExistingWorkitemRef;
+        return ExistingWorkitemRef.CopyWork();
     }
 
-    NetworkPendingWorkitem Workitem(NextWorkitem, WorkitemSize, Client);
-
-    // Increment workitem for next request.
-    NextWorkitem += WorkitemSize;
-
     // Add Workitem to list of outstanding workitems.
-    OutstandingWorkitems.push_back(std::move(Workitem));
+    OutstandingWorkitems.emplace_back(NextWorkitem, WorkitemSize, Client);
 
     // Get address of instance inserted into list.
     NetworkPendingWorkitem& PersistentWorkitemRef = OutstandingWorkitems.back();
@@ -213,10 +208,13 @@ NetworkPendingWorkitem& NetworkController::CreateWorkitem(uint16_t WorkitemCount
     // Insert into map
     OutstandingWorkitemsMap.emplace(PersistentWorkitemRef.Id, &PersistentWorkitemRef);
 
+    // Increment workitem for next request.
+    NextWorkitem += WorkitemSize;
+
     Client->TotalAssignedWorkitems++;
     NewAssignments++;
 
-    return PersistentWorkitemRef;
+    return PersistentWorkitemRef.CopyWork();
 }
 
 bool NetworkController::CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkClientInfo> Client, std::vector<std::unique_ptr<char[]>> ReceivedData)
@@ -513,7 +511,6 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, std
     if (!IsSocketValid(Result) || Result == 0)
     {
         ReportError(" recv count");
-        closesocket(ClientSock.ClientSocket);
         return;
     }
 
@@ -655,6 +652,13 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
         }
 
         BatchData.emplace_back(Data.release());
+    }
+
+    if (BatchData.size() != Count)
+    {
+        ReportError(" count of received primes is less than expected!!");
+        // Don't complete the workitem so it will be reassigned.
+        return;
     }
 
     CompleteWorkitem(Id, ClientInfo, std::move(BatchData));
@@ -1130,3 +1134,13 @@ NetworkPendingWorkitem::NetworkPendingWorkitem(mpz_class Value, uint32_t Offset,
     SendTime(std::chrono::steady_clock::now()),
     DataReceived(false)
 {}
+
+NetworkPendingWorkitem NetworkPendingWorkitem::CopyWork()
+{
+    NetworkPendingWorkitem Temp;
+    Temp.Id = this->Id;
+    Temp.Range = this->Range;
+    Temp.Start = this->Start;
+
+    return Temp;
+}

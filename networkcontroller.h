@@ -171,9 +171,11 @@ public:
     std::vector<std::unique_ptr<char[]>> Data;
     bool DataReceived;
 
+    explicit NetworkPendingWorkitem() = default;
     NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli);
     NetworkPendingWorkitem(const NetworkPendingWorkitem&) = delete;
     NetworkPendingWorkitem(NetworkPendingWorkitem&&) = default;
+    NetworkPendingWorkitem CopyWork();
 };
 
 struct NetworkConnectionInfo
@@ -223,7 +225,7 @@ private:
     bool SendId(NETSOCK Socket, uint64_t Id);
     uint32_t ReceiveOffset(NETSOCK Socket);
     bool SendOffset(NETSOCK Socket, uint32_t Offset);
-    NetworkPendingWorkitem& CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client);
+    NetworkPendingWorkitem CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client);
     bool CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkClientInfo> Client, std::vector<std::unique_ptr<char[]>> ReceivedData);
     NetworkPendingWorkitem RemoveWorkitem();
     int LivingClientsCount();
