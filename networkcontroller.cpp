@@ -175,34 +175,26 @@ NetworkPendingWorkitem& NetworkController::CreateWorkitem(uint16_t WorkitemCount
     // Specifically:
     // * Are there outstanding workitems?
     // * The workitem hasn't already been received
-    // * Has it been at least 10 seconds?
-    // * Has it been more than twice the average workitem completion time for this client?
-    // * Has it been more than twice the average workitem completion time for all clients?
+    // * Has it been more than twice the average workitem completion time for the assigned client?
     // * Does the client exist in the list of registered clients anymore?
     //
     // Rejected thoughts below:
     // * can't use outstandingworkitems vs. clients b/c 1 client may have many threads
     // * can't use workitems are received, b/c what if none are?
     // * can't use average completion time for all clients > 0 b/c what if none return?
-    if (OutstandingWorkitems.size() > 0 &&
+    if (!OutstandingWorkitems.empty() &&
         OutstandingWorkitems.front().DataReceived == false &&
-        ((/*(Now - OutstandingWorkitems.front().Timestamp) > std::chrono::seconds(10) &&*/ // dumb work around to give the workitem time to be sent out
-        /*(Now - OutstandingWorkitems.front().Timestamp) > (2 * OutstandingWorkitems.front().Client->AvgCompletionTime) &&*/
-        (Now - OutstandingWorkitems.front().SendTime) > (2 * AvgClientCompletionTime)) ||
+        ((Now - OutstandingWorkitems.front().SendTime) > (2 * OutstandingWorkitems.front().AssignedClient->AvgCompletionTime) ||
         Clients.find(OutstandingWorkitems.front().AssignedClient->Key) == Clients.end()))
     {
         NetworkPendingWorkitem& ExistingWorkitemRef = OutstandingWorkitems.front();
 
-        // Remove from existing client.
-        //ExistingWorkitemRef.Client->AssignedWorkitemsLock.lock();
-        //ExistingWorkitemRef.Client->AssignedWorkitems.erase(ExistingWorkitemRef.Id);
-        //ExistingWorkitemRef.Client->AssignedWorkitemsLock.unlock();
-
         // Assign to current client.
-        //Client->AssignedWorkitems.emplace(ExistingWorkitemRef.Id, &ExistingWorkitemRef);
+        ExistingWorkitemRef.AssignedClient = Client;
 
         Client->TotalAssignedWorkitems++;
-        OutstandingWorkitems.front().SendTime = Now;
+        ExistingWorkitemRef.SendTime = Now;
+        DuplicateAssignments++;
 
         return ExistingWorkitemRef;
     }
@@ -221,15 +213,16 @@ NetworkPendingWorkitem& NetworkController::CreateWorkitem(uint16_t WorkitemCount
     // Insert into map
     OutstandingWorkitemsMap.emplace(PersistentWorkitemRef.Id, &PersistentWorkitemRef);
 
-    //Client->AssignedWorkitems.emplace(PersistentWorkitemRef.Id, &PersistentWorkitemRef);
-
     Client->TotalAssignedWorkitems++;
+    NewAssignments++;
 
     return PersistentWorkitemRef;
 }
 
 bool NetworkController::CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkClientInfo> Client, std::vector<std::unique_ptr<char[]>> ReceivedData)
 {
+    auto Now = std::chrono::steady_clock::now();
+
     // take lock, Look up workitem in map, add receiveddata to workitem
     std::lock_guard<std::mutex> OuterLock(OutstandingWorkitemsLock);
 
@@ -238,24 +231,24 @@ bool NetworkController::CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkCli
     // Didn't find the workitem in the map anymore.
     if (PendingWorkitem == OutstandingWorkitemsMap.end())
     {
-        assert(false);
+        MissingReceives++;
         return false;
     }
-
-    //std::lock_guard<std::mutex> InnerLock(PendingWorkitem->second->DataLock);
 
     if (PendingWorkitem->second->DataReceived)
     {
         // Already received data for this workitem; bail.
+        DuplicateReceives++;
         return false;
     }
 
-    PendingWorkitem->second->Data.swap(ReceivedData);
+    PendingWorkitem->second->Data = std::move(ReceivedData);
     PendingWorkitem->second->DataReceived = true;
-    PendingWorkitem->second->ReceivedTime = std::chrono::steady_clock::now();
+    PendingWorkitem->second->ReceivedTime = Now;
 
-    // TODO: record reporting client... (why?)
+    // Record reporting client... (why?)
     PendingWorkitem->second->ReportingClient = Client;
+    Client->LastReceivedTime = Now;
     Client->TotalCompletedWorkitems++;
 
     // Wake up IO thread to handle this, potentially
@@ -264,23 +257,32 @@ bool NetworkController::CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkCli
         IoWaitVariable.notify_all();
     }
 
-
-    return false;
+    return true;
 }
 
-NetworkPendingWorkitem NetworkController::CleanupCurrentWorkitem()
+NetworkPendingWorkitem NetworkController::RemoveWorkitem()
 {
+    // Take lock
     OutstandingWorkitemsLock.lock();
+    // Take ownership of current workitem
     NetworkPendingWorkitem CompletedWorkitem(std::move(OutstandingWorkitems.front()));
 
+    // Remove from map
     OutstandingWorkitemsMap.erase(CompletedWorkitem.Id);
+    // Remove from list
     OutstandingWorkitems.pop_front();
+    // Unlock
     OutstandingWorkitemsLock.unlock();
 
     // Update average on reporting client
-    CalculateMovingAverage<NetworkClientInfo::MeanWeight>(
-        CompletedWorkitem.ReportingClient->AvgCompletionTime,
-        CompletedWorkitem.ReceivedTime - CompletedWorkitem.SendTime);
+    if (CompletedWorkitem.AssignedClient == CompletedWorkitem.ReportingClient)
+    {
+        // Only update if the same client reported it as it was last assigned to.
+        // Don't want to give credit/blame where it's not due.
+        CalculateMovingAverage<NetworkClientInfo::MeanWeight>(
+            CompletedWorkitem.ReportingClient->AvgCompletionTime,
+            CompletedWorkitem.ReceivedTime - CompletedWorkitem.SendTime);
+    }
 
     // Update average for all clients
     CalculateMovingAverage<NetworkController::MeanWeight>(
@@ -288,34 +290,6 @@ NetworkPendingWorkitem NetworkController::CleanupCurrentWorkitem()
         CompletedWorkitem.ReceivedTime - CompletedWorkitem.SendTime);
 
     return std::move(CompletedWorkitem);
-
-
-    //auto& Front = OutstandingWorkitems.front();
-
-    //if (Front.Id == Info.Id)
-    //{
-    //    assert(Front.Client.get() == Info.ReportingClient.get());
-
-    //    // Find and remove the workitem from the client info.
-    //    Front.Client->AssignedWorkitemsLock.lock();
-    //    Front.Client->AssignedWorkitems.erase(Front.Id);
-    //    Front.Client->AssignedWorkitemsLock.unlock();
-
-    //    // Update client statistics.
-    //    Front.Client->TotalCompletedWorkitems++;
-    //    CalculateMovingAverage<NetworkClientInfo::MeanWeight>(Front.Client->AvgCompletionTime, Info.ReceivedTime - Front.Timestamp);
-
-    //    // Update controller statistics.
-    //    CalculateMovingAverage<NetworkController::MeanWeight>(AvgClientCompletionTime,  Info.ReceivedTime - Front.Timestamp);
-
-    //    // Remove the completed workitem from the list of outstanding work.
-    //    OutstandingWorkitems.pop_front();
-
-    //    // This is the current workitem; indicate so to the caller.
-    //    return true;
-    //}
-    //// Not the current workitem, so return without cleaning up.
-    //return false;
 }
 
 int NetworkController::LivingClientsCount()
@@ -683,29 +657,6 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
         BatchData.emplace_back(Data.release());
     }
 
-
-    //auto Now = std::chrono::steady_clock::now();
-
-    //// Make sure that the workitem is still assigned to this client
-    //{
-    //    std::lock_guard<std::mutex> lock(ClientInfo->AssignedWorkitemsLock);
-    //    auto Assignment = ClientInfo->AssignedWorkitems.find(Id);
-
-    //    if (Assignment != ClientInfo->AssignedWorkitems.end())
-    //    {
-    //        // Mark the workitem as received
-    //        Assignment->second->Received = true;
-
-    //        // Update last-received time here
-    //        ClientInfo->LastReceivedTime = Now;
-
-    //        // Enqueue work to a threadpool to actually handle the file IO, since
-    //        // that may be slow. The server should have enough memory to hold all
-    //        // the data until it is written out.
-    //        PendingIo.EnqueueWorkItem({ Id, std::move(BatchData), ClientInfo, Now });
-    //    }
-    //}
-
     CompleteWorkitem(Id, ClientInfo, std::move(BatchData));
 
     // TODO: send confirmation message here
@@ -781,50 +732,26 @@ void NetworkController::HandleShutdownClient(NetworkConnectionInfo& ServerSock)
     }
 }
 
-void NetworkController::ProcessIO(ControllerIoInfo&& Info)
-{
-    //if (!CleanupWorkitem(Info))
-    //{
-        // Isn't the correct work item to process right now, so re-insert
-        // and try again later.
-    //    PendingIo.EnqueueWorkItem(std::move(Info));
-    //    return;
-    //}
-
-    if (Settings.FileSettings.Path.empty())
-    {
-        for (auto & d : Info.Data)
-        {
-            mpz_class Work(d.get(), STRING_BASE);
-
-            //std::cout << Work << std::endl; // linker error on windows
-            gmp_fprintf(stdout, "%Zd\n", Work.get_mpz_t());
-        }
-    }
-    else
-    {
-        FileIo.WritePrimes(Info.Data);
-    }
-}
-
 void NetworkController::IoLoop()
 {
     while (true)
     {
         {
             std::unique_lock<std::mutex> IoLock(IoWaitLock);
-            IoWaitVariable.wait(IoLock, [this]() -> bool { return (OutstandingWorkitems.size() > 0); });
+            IoWaitVariable.wait(IoLock, [this]() -> bool { return !(this->OutstandingWorkitems.empty()); });
         }
 
+        // Assumption: Since this thread is the only thread that modifies the
+        // head of OutstandingWorkitems (see RemoveWorkitem below),
+        // we don't need to take a lock.
+        // If DataReceived is being concurrently modified, also don't need
+        // to take the lock because the next iteration we will read it (correctly)
+        if (!OutstandingWorkitems.front().DataReceived)
         {
-            std::lock_guard<std::mutex> lock(OutstandingWorkitemsLock);
-            if (!OutstandingWorkitems.front().DataReceived)
-            {
-                continue;
-            }
+            continue;
         }
 
-        NetworkPendingWorkitem CurrentWorkitem(std::move(CleanupCurrentWorkitem()));
+        NetworkPendingWorkitem CurrentWorkitem(std::move(RemoveWorkitem()));
 
         if (Settings.FileSettings.Path.empty())
         {
@@ -986,12 +913,13 @@ NetworkController::NetworkController(const AllPrimebotSettings& Config) :
     OutstandingConnections(
         std::thread::hardware_concurrency(),
         std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1)),
-    //PendingIo(
-    //    1, // to ensure sequential consistency, IO must be single-threaded
-    //    std::bind(&NetworkController::ProcessIO, this, std::placeholders::_1)),
     ListenSocket(INVALID_SOCKET),
     Bot(nullptr),
-    AvgClientCompletionTime(0)
+    AvgClientCompletionTime(0),
+    NewAssignments(0),
+    DuplicateAssignments(0),
+    DuplicateReceives(0),
+    MissingReceives(0)
 {
 #if defined(_WIN32) || defined(_WIN64)
     WSAData WsData;
@@ -1005,7 +933,6 @@ NetworkController::NetworkController(const AllPrimebotSettings& Config) :
     {
         // Threadpools unused on client, so stop them to free resources
         OutstandingConnections.Stop();
-        //PendingIo.Stop();
     }
 }
 
@@ -1016,14 +943,13 @@ NetworkController::~NetworkController()
         shutdown(ListenSocket, SD_BOTH);
         closesocket(ListenSocket);
     }
-#ifdef _WIN32
+#if defined(_WIN32) || defined(_WIN64)
     WSACleanup();
 #endif
 
     if (Settings.NetworkSettings.Server)
     {
         OutstandingConnections.Stop();
-        //PendingIo.Stop();
     }
 }
 
@@ -1079,34 +1005,55 @@ void NetworkController::Shutdown()
 {
     ShutdownClients();
 
+    // Lock the list of workitems to check it
     OutstandingWorkitemsLock.lock();
-    if (OutstandingWorkitems.front().AssignedClient->Zombie)
+    if (!OutstandingWorkitems.empty() &&
+        !OutstandingWorkitems.front().DataReceived &&
+        (OutstandingWorkitems.front().AssignedClient->Zombie ||
+        Clients.find(OutstandingWorkitems.front().AssignedClient->Key) == Clients.end()))
     {
-        std::cout << "First pending workitem assigned to zombie client. Bailing on cleanup"
-            << std::endl;
+        // Never going to complete, bail.
         OutstandingWorkitemsLock.unlock();
+        std::cout << "First pending workitem assigned to zombie/missing client. Bailing on cleanup"
+            << std::endl;
     }
     else
     {
         // wait for list of clients to go to zero, indicating all have unregistered.
-        auto RemainingClients = LivingClientsCount();
         auto RemainingIo = OutstandingWorkitems.size();
         OutstandingWorkitemsLock.unlock();
+        auto RemainingClients = LivingClientsCount();
+
         while (RemainingClients > 0 || RemainingIo > 0)
         {
-            std::cout << "Waiting 1 second for remaining living clients: " << RemainingClients
-                << ", remaining I/Os: " << RemainingIo << std::endl;
-
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-
             {
                 std::unique_lock<std::mutex> IoLock(IoWaitLock);
                 IoWaitVariable.notify_all();
             }
 
+            std::cout << "Waiting 1 second for remaining living clients: " << RemainingClients
+                << ", remaining I/Os: " << RemainingIo << std::endl;
+
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+
             RemainingClients = LivingClientsCount();
+
+            // Lock to check on progress
             OutstandingWorkitemsLock.lock();
             RemainingIo = OutstandingWorkitems.size();
+            if (!OutstandingWorkitems.empty() &&
+                !OutstandingWorkitems.front().DataReceived &&
+                (OutstandingWorkitems.front().AssignedClient->Zombie ||
+                    Clients.find(OutstandingWorkitems.front().AssignedClient->Key) == Clients.end()))
+            {
+                OutstandingWorkitemsLock.unlock();
+                // Unlock and bail because no further progress will be made
+                std::cout << "Current pending workitem assigned to zombie/missing client. Bailing on cleanup"
+                    << std::endl;
+                break;
+            }
+            // Unlock for next iteration
             OutstandingWorkitemsLock.unlock();
         }
     }
@@ -1170,10 +1117,10 @@ std::string AddressType::ToString()
 }
 
 std::random_device NetworkPendingWorkitem::Rd;
-std::mt19937_64 NetworkPendingWorkitem::Rng = std::mt19937_64((uint64_t)NetworkPendingWorkitem::Rd() << 32 || NetworkPendingWorkitem::Rd());
+std::mt19937_64 NetworkPendingWorkitem::Rng = std::mt19937_64((uint64_t)NetworkPendingWorkitem::Rd() << 32 | NetworkPendingWorkitem::Rd());
 std::uniform_int_distribution<uint64_t> NetworkPendingWorkitem::Distribution = std::uniform_int_distribution<uint64_t>();
 // Obfuscate the output of the RNG by XORing with this process-lifetime key
-uint64_t NetworkPendingWorkitem::Key = (uint64_t)NetworkPendingWorkitem::Rd() << 32 || NetworkPendingWorkitem::Rd();
+uint64_t NetworkPendingWorkitem::Key = (((uint64_t)NetworkPendingWorkitem::Rd() << 32) | NetworkPendingWorkitem::Rd());
 
 NetworkPendingWorkitem::NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli) :
     Id(Distribution(Rng) ^ Key),
