@@ -164,6 +164,7 @@ public:
     uint64_t Id;
     mpz_class Start;
     uint32_t Range;
+    NetworkPendingWorkitem* Next;
     std::shared_ptr<NetworkClientInfo> AssignedClient;
     std::shared_ptr<NetworkClientInfo> ReportingClient;
     std::chrono::steady_clock::time_point SendTime;
@@ -207,9 +208,10 @@ private:
     Primebot* Bot;
     mpz_class InitialValue;
     mpz_class NextWorkitem;
-    std::list<NetworkPendingWorkitem> OutstandingWorkitems;
-    std::map<uint64_t, NetworkPendingWorkitem*> OutstandingWorkitemsMap;
-    std::mutex OutstandingWorkitemsLock;
+    std::map<uint64_t, NetworkPendingWorkitem> PendingWorkitems;
+    NetworkPendingWorkitem* FirstPendingWorkitem;
+    NetworkPendingWorkitem* LastPendingWorkitem;
+    std::mutex PendingWorkitemsLock;
     std::chrono::steady_clock::duration AvgClientCompletionTime;
     std::condition_variable_any IoWaitVariable;
     std::mutex IoWaitLock;
