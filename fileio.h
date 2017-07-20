@@ -3,23 +3,35 @@
 #include "commandparsertypes.h"
 #include "gmpwrapper.h"
 
+
+typedef std::unique_ptr<std::FILE, decltype(&std::fclose)> SmartFile;
+
+SmartFile make_smartfile(const char* FilePath, const char* Mode);
+
 class PrimeFileIo
 {
 private:
     mpz_class First;
     const AllPrimebotSettings& Settings;
     std::string FileName;
+    std::string FullFilePath;
+    SmartFile File;
+    unsigned int IoCount;
+    const int FlushInterval = 10;
 
-    bool WritePrimeToTextFile(std::string BasePath, std::string Name, std::string Prime);
-    bool WritePrimeToBinaryFile(std::string BasePath, std::string Name, std::string Prime);
+    bool CreatePrimeFile(const std::string& BasePath, const std::string& Name);
+    bool GetFirstPrimeFromFile();
 
-    bool WritePrimesToTextFile(std::string BasePath, std::string Name, mpz_list& Primes);
-    bool WritePrimesToTextFile(std::string BasePath, std::string Name, std::vector<std::unique_ptr<char[]>>& Primes);
+    bool WritePrimeToTextFile(const std::string& BasePath, const std::string& Name, const std::string& Prime);
+    bool WritePrimeToBinaryFile(const std::string& BasePath, const std::string& Name, const std::string& Prime);
 
-    mpz_list ReadPrimesFromTextFile(std::string FullFilePath);
+    bool WritePrimesToTextFile(const std::string& BasePath, const std::string& Name, const mpz_list& Primes);
+    bool WritePrimesToTextFile(const std::string& BasePath, const std::string& Name, const std::vector<std::unique_ptr<char[]>>& Primes);
 
-    bool WritePrimesToBinaryFile(std::string BasePath, std::string Name, mpz_list& Primes);
-    bool WritePrimesToBinaryFile(std::string BasePath, std::string Name, std::vector<std::unique_ptr<char[]>>& Primes);
+    mpz_list ReadPrimesFromTextFile(const std::string& FullFilePath);
+
+    bool WritePrimesToBinaryFile(const std::string& BasePath, const std::string& Name, const mpz_list& Primes);
+    bool WritePrimesToBinaryFile(const std::string& BasePath, const std::string& Name, const std::vector<std::unique_ptr<char[]>>& Primes);
 
     mpz_list ReadPrimesFromBinaryFile(std::string FullFilePath);
 
@@ -30,8 +42,8 @@ public:
 
     bool WritePrime(std::string Prime);
 
-    bool WritePrimes(mpz_list& Primes);
-    bool WritePrimes(std::vector<std::unique_ptr<char[]>>& Primes);
+    bool WritePrimes(const mpz_list& Primes);
+    bool WritePrimes(const std::vector<std::unique_ptr<char[]>>& Primes);
 
     void PrintPrimes();
 };

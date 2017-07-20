@@ -579,7 +579,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, std
     SendPrime(ClientSock.ClientSocket, Data.c_str(), Size);
 }
 
-bool NetworkController::ReportWork(uint64_t Id, std::vector<mpz_class>& WorkItems)
+bool NetworkController::ReportWork(uint64_t Id, const std::vector<mpz_class>& WorkItems)
 {
     NETSOCK Socket = GetSocketToServer();
     NETSOCK Result;
@@ -608,7 +608,7 @@ bool NetworkController::ReportWork(uint64_t Id, std::vector<mpz_class>& WorkItem
         return false;
     }
 
-    for (mpz_class& WorkItem : WorkItems)
+    for (const mpz_class& WorkItem : WorkItems)
     {
         Size = mpz_sizeinbase(WorkItem.get_mpz_t(), STRING_BASE) + 2;
         std::string Data(WorkItem.get_str(STRING_BASE)); // suspect this leaks memory
@@ -1148,17 +1148,17 @@ std::string AddressType::ToString()
 }
 
 std::random_device NetworkPendingWorkitem::Rd;
-std::mt19937_64 NetworkPendingWorkitem::Rng = std::mt19937_64(
-    std::seed_seq {
-        NetworkPendingWorkitem::Rd(),
-        NetworkPendingWorkitem::Rd(),
-        NetworkPendingWorkitem::Rd(),
-        NetworkPendingWorkitem::Rd(),
-        NetworkPendingWorkitem::Rd(),
-        NetworkPendingWorkitem::Rd(),
-        NetworkPendingWorkitem::Rd(),
-        NetworkPendingWorkitem::Rd()
-});
+std::seed_seq NetworkPendingWorkitem::Seed{
+    NetworkPendingWorkitem::Rd(),
+    NetworkPendingWorkitem::Rd(),
+    NetworkPendingWorkitem::Rd(),
+    NetworkPendingWorkitem::Rd(),
+    NetworkPendingWorkitem::Rd(),
+    NetworkPendingWorkitem::Rd(),
+    NetworkPendingWorkitem::Rd(),
+    NetworkPendingWorkitem::Rd()
+};
+std::mt19937_64 NetworkPendingWorkitem::Rng = std::mt19937_64(NetworkPendingWorkitem::Seed);
 std::uniform_int_distribution<uint64_t> NetworkPendingWorkitem::Distribution = std::uniform_int_distribution<uint64_t>();
 // Obfuscate the output of the RNG by XORing with this process-lifetime key
 uint64_t NetworkPendingWorkitem::Key = (((uint64_t)NetworkPendingWorkitem::Rd() << 32) | NetworkPendingWorkitem::Rd());

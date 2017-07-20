@@ -157,6 +157,7 @@ class NetworkPendingWorkitem
 {
 private:
     static std::random_device Rd;
+    static std::seed_seq Seed;
     static std::mt19937_64 Rng;
     static std::uniform_int_distribution<uint64_t> Distribution;
     static uint64_t Key;
@@ -261,7 +262,7 @@ public:
 
     bool RegisterClient();
     ClientWorkitem RequestWork(uint16_t Count);
-    bool ReportWork(uint64_t Id, std::vector<mpz_class>& WorkItems);
+    bool ReportWork(uint64_t Id, const std::vector<mpz_class>& WorkItems);
     void UnregisterClient();
     void ShutdownClients();
 };
