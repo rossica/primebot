@@ -1,15 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <cstdio>
 #include <cstdlib>
-#if defined(_WIN32) || defined(_WIN64)
-#pragma warning( push )
-#pragma warning( disable: 4146 )
-#pragma warning( disable: 4800 )
-#endif
-#include "gmpxx.h"
-#if defined(_WIN32) || defined(_WIN64)
-#pragma warning( pop )
-#endif
+#include "gmpwrapper.h"
 #include "fileio.h"
 #include "pal.h"
 #include "prime.h"
