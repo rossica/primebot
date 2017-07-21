@@ -940,7 +940,7 @@ NetworkController::NetworkController(const AllPrimebotSettings& Config) :
     Settings(Config),
     FileIo(Settings),
     OutstandingConnections(
-        std::thread::hardware_concurrency(),
+        Settings.PrimeSettings.ThreadCount,
         std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1)),
     ListenSocket(INVALID_SOCKET),
     Bot(nullptr),
