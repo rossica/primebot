@@ -73,6 +73,12 @@ enum NetworkMessageType
     ShutdownClient // 0 size, server initiated message
 };
 
+///////////////////////////////////////////////////////////////////
+//
+// These are mostly for educational purposes and are commented out
+//
+///////////////////////////////////////////////////////////////////
+/*
 struct RequestWorkMessage
 {
     // Requested count of workitems, in network byte-order
@@ -103,6 +109,7 @@ struct ReportWorkMessage
     // There's more than one of these; this is just the first one.
     OnWireWorkItem WorkItem;
 };
+*/
 
 ////////////////////////////////
 //
