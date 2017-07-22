@@ -14,10 +14,11 @@ typedef int NETSOCK;
 #define INVALID_SOCKET (-1)
 #endif
 
+#include "gmpwrapper.h"
 #include <memory>
 #include <map>
-#include <set>
 #include <list>
+#include <forward_list>
 #include <chrono>
 #include <random>
 #include <mutex>
@@ -153,14 +154,21 @@ inline bool operator==(const AddressType& Left, const AddressType& Right);
 // forward decl
 struct NetworkClientInfo;
 
+struct NetworkWorkitem
+{
+    uint64_t Id;
+    mpz_class Start;
+    uint32_t Range;
+};
+
 class NetworkPendingWorkitem
 {
 private:
     static std::random_device Rd;
-    static std::seed_seq Seed;
+    static const std::seed_seq Seed;
     static std::mt19937_64 Rng;
     static std::uniform_int_distribution<uint64_t> Distribution;
-    static uint64_t Key;
+    static const uint64_t Key;
 public:
     uint64_t Id;
     mpz_class Start;
@@ -177,7 +185,7 @@ public:
     NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli);
     NetworkPendingWorkitem(const NetworkPendingWorkitem&) = delete;
     NetworkPendingWorkitem(NetworkPendingWorkitem&&) = default;
-    NetworkPendingWorkitem CopyWork();
+    NetworkWorkitem CopyWork();
 };
 
 struct NetworkConnectionInfo
@@ -188,7 +196,7 @@ struct NetworkConnectionInfo
 
 struct NetworkClientInfo
 {
-    typedef std::ratio<1,2> MeanWeight;
+    typedef std::ratio<1,3> MeanWeight;
     uint64_t TotalAssignedWorkitems;
     uint64_t TotalCompletedWorkitems;
     std::chrono::steady_clock::duration AvgCompletionTime;
@@ -200,7 +208,7 @@ struct NetworkClientInfo
 class NetworkController
 {
 private:
-    typedef std::ratio<1,2> MeanWeight;
+    typedef std::ratio<1,3> MeanWeight;
     const AllPrimebotSettings& Settings;
     PrimeFileIo FileIo;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
@@ -216,6 +224,10 @@ private:
     std::chrono::steady_clock::duration AvgClientCompletionTime;
     std::condition_variable_any IoWaitVariable;
     std::mutex IoWaitLock;
+    std::forward_list<std::vector<std::unique_ptr<char[]>>> CompletedWorkitems;
+    std::mutex CompletedWorkitemsLock;
+    std::condition_variable_any CleanupWaitVariable;
+    std::mutex CleanupWaitLock;
     uint64_t NewAssignments;
     uint64_t DuplicateAssignments;
     uint64_t DuplicateReceives;
@@ -228,9 +240,9 @@ private:
     bool SendId(NETSOCK Socket, uint64_t Id);
     uint32_t ReceiveOffset(NETSOCK Socket);
     bool SendOffset(NETSOCK Socket, uint32_t Offset);
-    NetworkPendingWorkitem CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client);
+    NetworkWorkitem CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client);
     bool CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkClientInfo> Client, std::vector<std::unique_ptr<char[]>> ReceivedData);
-    NetworkPendingWorkitem RemoveWorkitem();
+    std::vector<std::unique_ptr<char[]>> RemoveWorkitem();
     int LivingClientsCount();
 
     // handles incoming requests, for client and server
@@ -244,6 +256,7 @@ private:
 
     // Handle IO
     void IoLoop();
+    void CleanupLoop();
 
     void ListenLoop();
     void ClientBind();
