@@ -666,7 +666,7 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
         BatchData.emplace_back(Data.release());
     }
 
-    if (BatchData.size() != Count)
+    if (BatchData.size() != (unsigned int) Count)
     {
         ReportError(" count of received primes is less than expected!!");
         // Don't complete the workitem so it will be reassigned.
@@ -1192,10 +1192,10 @@ const uint64_t NetworkPendingWorkitem::Key = (((uint64_t)NetworkPendingWorkitem:
 
 NetworkPendingWorkitem::NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli) :
     Id(Distribution(Rng) ^ Key),
-    AssignedClient(Cli),
     Start(Value),
     Range(Offset),
     Next(nullptr),
+    AssignedClient(Cli),
     SendTime(std::chrono::steady_clock::now()),
     DataReceived(false)
 {}

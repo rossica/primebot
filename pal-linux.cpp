@@ -21,7 +21,7 @@ void CtrlCHandler(int type)
 {
     static bool ShutdownInProgress = false;
     std::thread(
-        [type, &ShutdownInProgress]
+        [type]
         {
             switch(type)
             {
