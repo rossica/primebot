@@ -20,8 +20,11 @@ inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
 typedef int NETSOCK;
 #define INVALID_SOCKET (-1)
 #define SD_BOTH SHUT_RDWR
+#define SD_RECEIVE SHUT_RD
 #define SD_SEND SHUT_WR
 #define closesocket close
+#define htonll(Value) __bswap_constant_64(Value)
+#define ntohll(Value) __bswap_constant_64(Value)
 inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 // remove this if linux ever implements memcpy_s
 #define memcpy_s(dest, destsz, src, srcsz) memcpy(dest, src, destsz)
@@ -73,6 +76,8 @@ std::unique_ptr<char[]> NetworkController::ReceivePrime(NETSOCK Socket, size_t S
         ReceivedData += Result;
 
     } while (IsSocketValid(Result) && Result > 0 && ReceivedData < Size);
+
+    assert(ReceivedData == Size);
 
     return std::move(Data);
 }
@@ -155,7 +160,7 @@ bool NetworkController::SendOffset(NETSOCK Socket, uint32_t Offset)
     return true;
 }
 
-NetworkPendingWorkitem NetworkController::CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client)
+NetworkWorkitem NetworkController::CreateWorkitem(uint16_t WorkitemCount, std::shared_ptr<NetworkClientInfo> Client)
 {
     auto Now = std::chrono::steady_clock::now();
     // TODO: growth function for batchsize relative to prime magnitude:
@@ -275,7 +280,7 @@ bool NetworkController::CompleteWorkitem(uint64_t Id, std::shared_ptr<NetworkCli
     return true;
 }
 
-NetworkPendingWorkitem NetworkController::RemoveWorkitem()
+std::vector<std::unique_ptr<char[]>> NetworkController::RemoveWorkitem()
 {
     // Take lock
     PendingWorkitemsLock.lock();
@@ -312,7 +317,7 @@ NetworkPendingWorkitem NetworkController::RemoveWorkitem()
         AvgClientCompletionTime,
         CompletedWorkitem.ReceivedTime - CompletedWorkitem.SendTime);
 
-    return std::move(CompletedWorkitem);
+    return std::move(CompletedWorkitem.Data);
 }
 
 int NetworkController::LivingClientsCount()
@@ -543,7 +548,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, std
     Count = ntohs(Count);
 
     // Get prime number to send to client
-    NetworkPendingWorkitem& Work = CreateWorkitem(Count, ClientInfo);
+    NetworkWorkitem Work = CreateWorkitem(Count, ClientInfo);
 
     Size = mpz_sizeinbase(Work.Start.get_mpz_t(), STRING_BASE) + 2;
 
@@ -780,11 +785,11 @@ void NetworkController::IoLoop()
             continue;
         }
 
-        NetworkPendingWorkitem CurrentWorkitem(std::move(RemoveWorkitem()));
+        std::vector<std::unique_ptr<char[]>> Data(std::move(RemoveWorkitem()));
 
         if (Settings.FileSettings.Path.empty())
         {
-            for (auto & d : CurrentWorkitem.Data)
+            for (auto & d : Data)
             {
                 mpz_class Work(d.get(), STRING_BASE);
 
@@ -794,8 +799,42 @@ void NetworkController::IoLoop()
         }
         else
         {
-            FileIo.WritePrimes(CurrentWorkitem.Data);
+            FileIo.WritePrimes(Data);
         }
+
+        // Move completed data to be cleaned up by another thread.
+        // This moves about 6% CPU time out of the IoLoop, allowing it to
+        // get through more work per unit time.
+        CompletedWorkitemsLock.lock();
+
+        CompletedWorkitems.emplace_front(std::move(Data));
+
+        CompletedWorkitemsLock.unlock();
+        // Notify Cleanup thread there's work to do.
+        {
+            std::unique_lock<std::mutex> CleanupLock(CleanupWaitLock);
+            CleanupWaitVariable.notify_all();
+        }
+    }
+}
+
+void NetworkController::CleanupLoop()
+{
+    while (true)
+    {
+        {
+            std::unique_lock<std::mutex> CleanupLock(CleanupWaitLock);
+            CleanupWaitVariable.wait(CleanupLock, [this]() -> bool { return !CompletedWorkitems.empty(); });
+        }
+
+        CompletedWorkitemsLock.lock();
+
+        auto Cleanup(std::move(CompletedWorkitems.front()));
+        CompletedWorkitems.pop_front();
+
+        CompletedWorkitemsLock.unlock();
+
+        Cleanup.clear();
     }
 }
 
@@ -1021,6 +1060,9 @@ void NetworkController::Start()
         // Start IO thread
         std::thread(&NetworkController::IoLoop, this).detach();
 
+        // Start cleanup thread
+        std::thread(&NetworkController::CleanupLoop, this).detach();
+
         // This will never return
         ListenLoop();
     }
@@ -1148,7 +1190,7 @@ std::string AddressType::ToString()
 }
 
 std::random_device NetworkPendingWorkitem::Rd;
-std::seed_seq NetworkPendingWorkitem::Seed{
+const std::seed_seq NetworkPendingWorkitem::Seed{
     NetworkPendingWorkitem::Rd(),
     NetworkPendingWorkitem::Rd(),
     NetworkPendingWorkitem::Rd(),
@@ -1161,7 +1203,7 @@ std::seed_seq NetworkPendingWorkitem::Seed{
 std::mt19937_64 NetworkPendingWorkitem::Rng = std::mt19937_64(NetworkPendingWorkitem::Seed);
 std::uniform_int_distribution<uint64_t> NetworkPendingWorkitem::Distribution = std::uniform_int_distribution<uint64_t>();
 // Obfuscate the output of the RNG by XORing with this process-lifetime key
-uint64_t NetworkPendingWorkitem::Key = (((uint64_t)NetworkPendingWorkitem::Rd() << 32) | NetworkPendingWorkitem::Rd());
+const uint64_t NetworkPendingWorkitem::Key = (((uint64_t)NetworkPendingWorkitem::Rd() << 32) | NetworkPendingWorkitem::Rd());
 
 NetworkPendingWorkitem::NetworkPendingWorkitem(mpz_class Value, uint32_t Offset, std::shared_ptr<NetworkClientInfo> Cli) :
     Id(Distribution(Rng) ^ Key),
@@ -1173,12 +1215,7 @@ NetworkPendingWorkitem::NetworkPendingWorkitem(mpz_class Value, uint32_t Offset,
     DataReceived(false)
 {}
 
-NetworkPendingWorkitem NetworkPendingWorkitem::CopyWork()
+NetworkWorkitem NetworkPendingWorkitem::CopyWork()
 {
-    NetworkPendingWorkitem Temp;
-    Temp.Id = this->Id;
-    Temp.Range = this->Range;
-    Temp.Start = this->Start;
-
-    return Temp;
+    return { this->Id, this->Start, this->Range };
 }
