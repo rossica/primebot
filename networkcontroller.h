@@ -151,6 +151,30 @@ inline bool operator<(const AddressType& Left, const AddressType& Right);
 inline bool operator==(const AddressType& Left, const AddressType& Right);
 
 
+// This class derived from this answer here: https://stackoverflow.com/a/29615483
+class SmartSocket
+{
+private:
+    NETSOCK Skt;
+public:
+    constexpr SmartSocket() noexcept : Skt(INVALID_SOCKET) {}
+    explicit SmartSocket(NETSOCK sock) noexcept : Skt(sock) {}
+    SmartSocket(SmartSocket&& other) noexcept : Skt(other.release()) {}
+    ~SmartSocket() noexcept; // Defined in source file
+
+    operator NETSOCK() const noexcept { return Skt; }
+
+    SmartSocket& operator=(SmartSocket&& s) noexcept { reset(s.release()); return *this; }
+
+    NETSOCK release() noexcept { NETSOCK s = Skt; Skt = INVALID_SOCKET; return s; }
+    void reset(NETSOCK s = INVALID_SOCKET) noexcept { SmartSocket(s).swap(*this); }
+    void swap(SmartSocket& other) noexcept { std::swap(this->Skt, other.Skt); }
+
+    SmartSocket(const SmartSocket&) = delete;
+    SmartSocket& operator=(const SmartSocket&) = delete;
+};
+
+
 // forward decl
 struct NetworkClientInfo;
 
@@ -165,7 +189,7 @@ class NetworkPendingWorkitem
 {
 private:
     static std::random_device Rd;
-    static const std::seed_seq Seed;
+    static std::seed_seq Seed;
     static std::mt19937_64 Rng;
     static std::uniform_int_distribution<uint64_t> Distribution;
     static const uint64_t Key;
@@ -191,7 +215,12 @@ public:
 struct NetworkConnectionInfo
 {
     AddressType addr;
-    NETSOCK ClientSocket;
+    SmartSocket ClientSocket;
+
+    NetworkConnectionInfo() = default;
+    NetworkConnectionInfo(NetworkConnectionInfo&&) = default;
+
+    NetworkConnectionInfo(const NetworkConnectionInfo&) = delete;
 };
 
 struct NetworkClientInfo
@@ -213,7 +242,7 @@ private:
     PrimeFileIo FileIo;
     Threadpool<NetworkConnectionInfo, std::list<NetworkConnectionInfo>> OutstandingConnections;
     std::map<AddressType, std::shared_ptr<NetworkClientInfo>> Clients;
-    NETSOCK ListenSocket;
+    SmartSocket ListenSocket;
     Primebot* Bot;
     mpz_class InitialValue;
     mpz_class NextWorkitem;
@@ -262,8 +291,8 @@ private:
     void ClientBind();
     void ServerBind();
 
-    NETSOCK GetSocketTo(const sockaddr_in6& Client);
-    NETSOCK GetSocketToServer();
+    SmartSocket GetSocketTo(const sockaddr_in6& Client);
+    SmartSocket GetSocketToServer();
 public:
     NetworkController() = delete;
     NetworkController(const AllPrimebotSettings& Config);

@@ -399,16 +399,12 @@ void NetworkController::HandleRequest(NetworkConnectionInfo&& ClientSock)
     default:
         return;
     }
-
-    // When finished, close the socket
-    shutdown(ClientSock.ClientSocket, SD_BOTH);
-    closesocket(ClientSock.ClientSocket);
 }
 
 bool NetworkController::RegisterClient()
 {
     NetworkHeader Header = { 0 };
-    NETSOCK Socket = GetSocketToServer();
+    SmartSocket Socket = GetSocketToServer();
 
     Header.Type = NetworkMessageType::RegisterClient;
     if (!IsSocketValid(send(Socket, (char*)&Header, sizeof(Header), 0)))
@@ -417,8 +413,7 @@ bool NetworkController::RegisterClient()
         return false;
     }
 
-    shutdown(Socket, SD_SEND);
-    closesocket(Socket);
+    // TODO: Receive confirmation of client registration
     return true;
 }
 
@@ -441,7 +436,7 @@ void NetworkController::HandleRegisterClient(NetworkConnectionInfo& ClientSock)
 
 ClientWorkitem NetworkController::RequestWork(uint16_t Count)
 {
-    NETSOCK Socket = GetSocketToServer();
+    SmartSocket Socket = GetSocketToServer();
     NETSOCK Result;
     NetworkHeader Header = { 0 };
     Header.Type = NetworkMessageType::RequestWork;
@@ -452,7 +447,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
     if (!IsSocketValid(Result))
     {
         ReportError(" send header");
-        closesocket(Socket);
         return ClientWorkitem();
     }
 
@@ -464,7 +458,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
     if (!IsSocketValid(Result))
     {
         ReportError(" send request");
-        closesocket(Socket);
         return ClientWorkitem();
     }
 
@@ -476,7 +469,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
     if (!IsSocketValid(Result) || Result == 0)
     {
         ReportError(" recv header");
-        closesocket(Socket);
         return ClientWorkitem();
     }
 
@@ -485,7 +477,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
     if (Header.Size < 1 || Header.Size > (INT_MAX >> 1))
     {
         ReportError(" header size invalid");
-        closesocket(Socket);
         return ClientWorkitem();
     }
 
@@ -493,7 +484,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
     if (Workitem.Id == INVALID_ID)
     {
         ReportError(" invalid ID");
-        closesocket(Socket);
         return ClientWorkitem();
     }
 
@@ -501,7 +491,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
     if (Workitem.Offset == 0)
     {
         ReportError(" invalid offset");
-        closesocket(Socket);
         return ClientWorkitem();
     }
 
@@ -510,7 +499,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
     if (Data == nullptr)
     {
         ReportError(" empty start prime");
-        closesocket(Socket);
         return ClientWorkitem();
     }
 
@@ -519,7 +507,6 @@ ClientWorkitem NetworkController::RequestWork(uint16_t Count)
 
     // done receiving, close recv
     shutdown(Socket, SD_RECEIVE);
-    closesocket(Socket);
 
     if (mpz_even_p(Workitem.Start.get_mpz_t()))
     {
@@ -586,7 +573,7 @@ void NetworkController::HandleRequestWork(NetworkConnectionInfo& ClientSock, std
 
 bool NetworkController::ReportWork(uint64_t Id, const std::vector<mpz_class>& WorkItems)
 {
-    NETSOCK Socket = GetSocketToServer();
+    SmartSocket Socket = GetSocketToServer();
     NETSOCK Result;
     NetworkHeader Header = { 0 };
     int Size;
@@ -602,14 +589,12 @@ bool NetworkController::ReportWork(uint64_t Id, const std::vector<mpz_class>& Wo
     if (!IsSocketValid(Result))
     {
         ReportError(" send header");
-        closesocket(Socket);
         return false;
     }
 
     if (!SendId(Socket, Id))
     {
         ReportError(" send Id");
-        closesocket(Socket);
         return false;
     }
 
@@ -625,21 +610,18 @@ bool NetworkController::ReportWork(uint64_t Id, const std::vector<mpz_class>& Wo
         if (!IsSocketValid(Result))
         {
             ReportError(" send size");
-            closesocket(Socket);
             return false;
         }
 
         if (!SendPrime(Socket, Data.c_str(), Size))
         {
             ReportError(" send prime");
-            closesocket(Socket);
             return false;
         }
     }
 
     // TODO: receive confirmation message here
-    shutdown(Socket, SD_BOTH);
-    closesocket(Socket);
+
     return true;
 }
 
@@ -699,12 +681,11 @@ void NetworkController::HandleReportWork(NetworkConnectionInfo& ClientSock, int 
 void NetworkController::UnregisterClient()
 {
     NetworkHeader Header = { NetworkMessageType::UnregisterClient, 0 };
-    NETSOCK Socket = GetSocketToServer();
+    SmartSocket Socket = GetSocketToServer();
 
     send(Socket, (char*)&Header, sizeof(Header), 0);
     // wait for response from server
     recv(Socket, (char*)&Header, sizeof(Header), 0);
-    closesocket(Socket);
 }
 
 void NetworkController::HandleUnregisterClient(NetworkConnectionInfo& ClientSock)
@@ -742,7 +723,7 @@ void NetworkController::ShutdownClients()
         }
 
         // open a socket to the client
-        NETSOCK Socket = GetSocketTo(addr.IPv6);
+        SmartSocket Socket = GetSocketTo(addr.IPv6);
 
         // send shutdown message
         Result = send(Socket, (char*)&Header, sizeof(Header), 0);
@@ -751,9 +732,6 @@ void NetworkController::ShutdownClients()
             ReportError(" send shutdown failed for " + addr.ToString());
             client.second->Zombie = true;
         }
-
-        shutdown(Socket, SD_BOTH);
-        closesocket(Socket);
     }
 }
 
@@ -847,7 +825,7 @@ void NetworkController::ListenLoop()
 
         socklen_t ConnInfoAddrSize = sizeof(ConnInfo.addr.IPv6);
 
-        ConnInfo.ClientSocket = accept(ListenSocket, (sockaddr*)&ConnInfo.addr.IPv6, &ConnInfoAddrSize);
+        ConnInfo.ClientSocket.reset(accept(ListenSocket, (sockaddr*)&ConnInfo.addr.IPv6, &ConnInfoAddrSize));
 
         if (!IsSocketValid(ConnInfo.ClientSocket))
         {
@@ -928,11 +906,11 @@ void NetworkController::ServerBind()
     }
 }
 
-NETSOCK NetworkController::GetSocketTo(const sockaddr_in6& Client)
+SmartSocket NetworkController::GetSocketTo(const sockaddr_in6& Client)
 {
     NETSOCK Result;
     int Enable = 1;
-    NETSOCK Socket = socket(Client.sin6_family, SOCK_STREAM, IPPROTO_TCP);
+    SmartSocket Socket(socket(Client.sin6_family, SOCK_STREAM, IPPROTO_TCP));
     if (!IsSocketValid(Socket))
     {
         ReportError(" socket creation");
@@ -950,7 +928,6 @@ NETSOCK NetworkController::GetSocketTo(const sockaddr_in6& Client)
         if (!IsSocketValid(Result))
         {
             ReportError(" connect ipv4");
-            closesocket(Socket);
         }
     }
     else
@@ -963,14 +940,13 @@ NETSOCK NetworkController::GetSocketTo(const sockaddr_in6& Client)
         if (!IsSocketValid(Result))
         {
             ReportError(" connect IPv6");
-            closesocket(Socket);
         }
     }
 
     return Socket;
 }
 
-NETSOCK NetworkController::GetSocketToServer()
+SmartSocket NetworkController::GetSocketToServer()
 {
     return GetSocketTo(Settings.NetworkSettings.IPv6);
 }
@@ -981,7 +957,6 @@ NetworkController::NetworkController(const AllPrimebotSettings& Config) :
     OutstandingConnections(
         Settings.PrimeSettings.ThreadCount,
         std::bind(&NetworkController::HandleRequest, this, std::placeholders::_1)),
-    ListenSocket(INVALID_SOCKET),
     Bot(nullptr),
     FirstPendingWorkitem(nullptr),
     LastPendingWorkitem(nullptr),
@@ -1008,19 +983,19 @@ NetworkController::NetworkController(const AllPrimebotSettings& Config) :
 
 NetworkController::~NetworkController()
 {
-    if (IsSocketValid(ListenSocket))
-    {
-        shutdown(ListenSocket, SD_BOTH);
-        closesocket(ListenSocket);
-    }
-#if defined(_WIN32) || defined(_WIN64)
-    WSACleanup();
-#endif
-
     if (Settings.NetworkSettings.Server)
     {
         OutstandingConnections.Stop();
     }
+
+#if defined(_WIN32) || defined(_WIN64)
+    if (IsSocketValid(ListenSocket))
+    {
+        // On Windows, ensure the socket is closed before Winsock is cleaned up.
+        ListenSocket.~SmartSocket();
+    }
+    WSACleanup();
+#endif
 }
 
 void NetworkController::Start()
@@ -1030,7 +1005,7 @@ void NetworkController::Start()
     // Clients and servers both listen on a socket for incoming connections
     // Clients just need to make sure the connection is from the server.
 
-    ListenSocket = socket(Settings.NetworkSettings.IPv4.sin_family, SOCK_STREAM, IPPROTO_TCP);
+    ListenSocket.reset(socket(Settings.NetworkSettings.IPv4.sin_family, SOCK_STREAM, IPPROTO_TCP));
     if (!IsSocketValid(ListenSocket))
     {
         ReportError(" socket creation");
@@ -1189,8 +1164,18 @@ std::string AddressType::ToString()
     return AddressString.str();
 }
 
+SmartSocket::~SmartSocket() noexcept
+{
+    if (Skt != INVALID_SOCKET)
+    {
+        shutdown(Skt, SD_BOTH);
+        closesocket(Skt);
+        Skt = INVALID_SOCKET;
+    }
+}
+
 std::random_device NetworkPendingWorkitem::Rd;
-const std::seed_seq NetworkPendingWorkitem::Seed{
+std::seed_seq NetworkPendingWorkitem::Seed{
     NetworkPendingWorkitem::Rd(),
     NetworkPendingWorkitem::Rd(),
     NetworkPendingWorkitem::Rd(),
