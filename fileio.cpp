@@ -446,6 +446,11 @@ PrimeFileIo::PrimeFileIo(const AllPrimebotSettings & Settings) :
     {
         FileName = ::GetPrimeFileName(Settings);
     }
+
+    if (Settings.FileSettings.Flags.Print)
+    {
+        FullFilePath = Settings.FileSettings.Path;
+    }
 }
 
 mpz_list PrimeFileIo::ReadPrimes()
@@ -498,24 +503,53 @@ bool PrimeFileIo::WritePrimes(const std::vector<std::unique_ptr<char[]>>& Primes
 
 void PrimeFileIo::PrintPrimes()
 {
-
-    // TODO: Print primes as they are read instead of making a list of them
-    // then printing. This is necessary when the lists become very large.
-
-    mpz_list Primes;
     if (Settings.FileSettings.Flags.Binary)
     {
-        Primes = ReadPrimesFromBinaryFile(Settings.FileSettings.Path);
+        mpz_class Current;
+
+        File = make_smartfile(FullFilePath.c_str(), "rb");
+        if (File == nullptr)
+        {
+            std::cerr << "Failed to open file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
+            return;
+        }
+
+        // Read first prime for offset calculations
+        if (!mpz_inp_raw(First.get_mpz_t(), File.get()))
+        {
+            std::cerr << "Failed reading first prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
+            return;
+        }
+
+        while (!std::feof(File.get()) && !std::ferror(File.get()))
+        {
+            if (!mpz_inp_raw(Current.get_mpz_t(), File.get()))
+            {
+                if (!std::feof(File.get()))
+                {
+                    std::cerr << "Failed reading prime from file, " << FullFilePath << ": " << std::strerror(errno) << std::endl;
+                    return;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            Current += First;
+            gmp_fprintf(stdout, "%Zd\n", Current.get_mpz_t());
+        }
     }
     else
     {
-        Primes = ReadPrimesFromTextFile(Settings.FileSettings.Path);
+        mpz_list Primes = ReadPrimesFromTextFile(Settings.FileSettings.Path);
+
+        for (mpz_class & p : Primes)
+        {
+            // Compromise: gmp_printf on windows can't figure out the
+            // stdio file handles. But this works fine.
+            gmp_fprintf(stdout, "%Zd\n", p.get_mpz_t());
+        }
     }
 
-    for (mpz_class & p : Primes)
-    {
-        // Compromise: gmp_printf on windows can't figure out the
-        // stdio file handles. But this works fine.
-        gmp_fprintf(stdout, "%Zd\n", p.get_mpz_t());
-    }
 }

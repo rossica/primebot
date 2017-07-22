@@ -127,7 +127,7 @@ void Primebot::FindPrimeStandalone(mpz_class && workitem, int id, unsigned int B
         // If this thread has reported any results already
         // wait until the last thread cleans up the results before inserting
         // TODO: this could be optimized somehow...
-        while (Results.load()->data()[id].size())
+        while (!Results.load()->data()[id].empty())
         {
             std::this_thread::yield();
         }
@@ -205,8 +205,12 @@ void Primebot::FindPrimesClient()
 
         Controller->ReportWork(Workitem.Id, Batch);
     }
-    // If the batch count is reached, call stop()
-    std::thread(&Primebot::Stop, this).detach();
+    // Abusing ResultsCount here to synchronize between completed threads.
+    if (++ResultsCount == Settings.PrimeSettings.ThreadCount)
+    {
+        // If the batch count is reached, call stop()
+        std::thread(&Primebot::Stop, this).detach();
+    }
 }
 
 void Primebot::ProcessOrReportResults(std::vector<mpz_class>& Results)
