@@ -17,14 +17,22 @@ inline bool IsSocketValid(NETSOCK sock) { return sock != INVALID_SOCKET; }
 #include <netinet/ip.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <endian.h>
 typedef int NETSOCK;
 #define INVALID_SOCKET (-1)
 #define SD_BOTH SHUT_RDWR
 #define SD_RECEIVE SHUT_RD
 #define SD_SEND SHUT_WR
 #define closesocket close
-#define htonll(Value) __bswap_constant_64(Value)
-#define ntohll(Value) __bswap_constant_64(Value)
+#define ntohll(Value) htonll(Value)
+inline uint64_t htonll(uint64_t Value)
+{
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    return __bswap_constant_64(Value);
+#else
+    return Value;
+#endif
+}
 inline bool IsSocketValid(NETSOCK sock) { return sock >= 0; }
 // remove this if linux ever implements memcpy_s
 #define memcpy_s(dest, destsz, src, srcsz) memcpy(dest, src, destsz)
@@ -805,14 +813,15 @@ void NetworkController::CleanupLoop()
             CleanupWaitVariable.wait(CleanupLock, [this]() -> bool { return !CompletedWorkitems.empty(); });
         }
 
+        std::forward_list<std::vector<std::unique_ptr<char[]>>> CleanupList;
+
         CompletedWorkitemsLock.lock();
 
-        auto Cleanup(std::move(CompletedWorkitems.front()));
-        CompletedWorkitems.pop_front();
+        CleanupList.swap(CompletedWorkitems);
 
         CompletedWorkitemsLock.unlock();
 
-        Cleanup.clear();
+        CleanupList.clear();
     }
 }
 
@@ -1025,7 +1034,7 @@ void NetworkController::Start()
     {
         ReportError(" listen");
     }
-    
+
     // Actually start waiting for connections
     if (Settings.NetworkSettings.Server)
     {
