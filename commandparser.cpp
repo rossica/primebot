@@ -18,7 +18,7 @@ void CommandParser::PrintHelp()
     std::cout << "Primebot" << std::endl;
     std::cout << "primebot Usage:" << std::endl;
     std::cout << "primebot [[-c | -s] <addr>] [-a] [-t <cnt>] [-p <path>] [-i <seed>] [-b <cnt>]" << std::endl;
-    std::cout << "         [--batchsize <size>] [--batches <cnt>] [--start <start>]" << std::endl;
+    std::cout << "         [-r] [--batchsize <size>] [--batches <cnt>] [--start <start>]" << std::endl;
     std::cout << "         [--startbase <base>]" << std::endl;
     std::cout << "primebot [-h | -?]" << std::endl;
     std::cout << "  -c / --client: Configure as a client, connection to server at <address>" << std::endl;
@@ -28,6 +28,7 @@ void CommandParser::PrintHelp()
     std::cout << "  -p / --path: Path to save discovered primes at. Otherwise print to console" << std::endl;
     std::cout << "  -i / --seed: Use <seed> for RNG to find starting number" << std::endl;
     std::cout << "  -b / --bits: Search numbers using at most <count> bits" << std::endl;
+    std::cout << "  -r / --reverse: Search numbers in reverse, i.e. down towards zero" << std::endl;
     std::cout << "  --print: Print primes stored in a file given with -p/--path" << std::endl;
     std::cout << "  --text: Store primes written with -p/--path as text instead of binary" << std::endl;
     std::cout << "  --batchsize: Count of numbers each thread will test for primality" << std::endl;
@@ -108,6 +109,12 @@ bool CommandParser::ConfigureClient(AllPrimebotSettings& Settings, std::string A
 bool CommandParser::ConfigureAsync(AllPrimebotSettings& Settings)
 {
     Settings.PrimeSettings.UseAsync = true;
+    return true;
+}
+
+bool CommandParser::ConfigureReverse(AllPrimebotSettings& Settings)
+{
+    Settings.PrimeSettings.Reverse = true;
     return true;
 }
 
@@ -284,6 +291,10 @@ AllPrimebotSettings CommandParser::ParseArguments()
             i++;
             Result = ConfigureBits(Settings, Args[i]);
         }
+        else if (CompareArg("--reverse", Args[i]) || CompareArg("-r", Args[i]))
+        {
+            Result = ConfigureReverse(Settings);
+        }
         else if (CompareArg("--print", Args[i]))
         {
             Result = ConfigurePrint(Settings);
@@ -346,6 +357,7 @@ AllPrimebotSettings CommandParser::ParseArguments()
 
 PrimebotSettings::PrimebotSettings() :
     UseAsync(false),
+    Reverse(false),
     ThreadCount(std::thread::hardware_concurrency()),
     Bitsize(512),
     RngSeed(1234),

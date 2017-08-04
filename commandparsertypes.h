@@ -41,6 +41,8 @@ struct PrimebotSettings
 {
     // Use Async prime finding code instead of threadpool
     bool UseAsync;
+    // Search in descending order towards zero, instead of ascending.
+    bool Reverse;
     // Threads to use for threadpool or Async
     unsigned int ThreadCount;
     // Number of bits in the numbers being searched

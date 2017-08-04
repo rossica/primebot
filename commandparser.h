@@ -13,6 +13,7 @@ private:
     bool ConfigureServer(AllPrimebotSettings& Settings, std::string Address);
     bool ConfigureClient(AllPrimebotSettings& Settings, std::string Address);
     bool ConfigureAsync(AllPrimebotSettings& Settings);
+    bool ConfigureReverse(AllPrimebotSettings& Settings);
     bool ConfigureThreads(AllPrimebotSettings& Settings, std::string Threads);
     bool ConfigurePath(AllPrimebotSettings& Settings, std::string Path);
     bool ConfigureSeed(AllPrimebotSettings& Settings, std::string Seed);

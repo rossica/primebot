@@ -210,6 +210,12 @@ NetworkWorkitem NetworkController::CreateWorkitem(uint16_t WorkitemCount, std::s
         return FirstPendingWorkitem->CopyWork();
     }
 
+    // If Reverse mode, decrement workitem for this request.
+    if(Settings.PrimeSettings.Reverse && NextWorkitem > 0)
+    {
+        NextWorkitem -= WorkitemSize;
+    }
+
     NetworkPendingWorkitem Workitem(NextWorkitem, WorkitemSize, Client);
 
     // Add Workitem to map of outstanding workitems.
@@ -238,8 +244,11 @@ NetworkWorkitem NetworkController::CreateWorkitem(uint16_t WorkitemCount, std::s
         LastPendingWorkitem = LastPendingWorkitem->Next;
     }
 
-    // Increment workitem for next request.
-    NextWorkitem += WorkitemSize;
+    if(!Settings.PrimeSettings.Reverse)
+    {
+        // Increment workitem for next request.
+        NextWorkitem += WorkitemSize;
+    }
 
     Client->TotalAssignedWorkitems++;
     NewAssignments++;
