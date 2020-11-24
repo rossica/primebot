@@ -117,6 +117,8 @@ void Primebot::FindPrimeStandalone(mpz_class && workitem, int id, unsigned int B
         // sure there are no gaps.
         for (unsigned int i = 0; i < BatchSize && !Quit; i++, workitem += 2)
         {
+            // Skip numbers ending in 5, since they cannot be prime, even if they are odd.
+            if (mpz_get_ui(workitem.get_mpz_t()) & 5 == 5) continue;
             if (mpz_probab_prime_p(workitem.get_mpz_t(), MillerRabinIterations))
             {
                 // this will invoke the copy constructor
@@ -197,6 +199,8 @@ void Primebot::FindPrimesClient()
         // always reach a terminal state, so it'll always return a full batch.
         for (unsigned int i = 0; i < Workitem.Offset / 2; i++, Workitem.Start += 2)
         {
+            // Skip numbers ending in 5, since they cannot be prime, even if they are odd.
+            if (mpz_get_ui(Workitem.Start.get_mpz_t()) & 5 == 5) continue;
             if (mpz_probab_prime_p(Workitem.Start.get_mpz_t(), MillerRabinIterations))
             {
                 Batch.emplace_back(Workitem.Start);
